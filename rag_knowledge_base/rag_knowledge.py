@@ -7,17 +7,18 @@ import pickle
 
 from agentscope.rag import SimpleKnowledge, QdrantStore, Document, DocMetadata, KnowledgeBase
 import asyncio
-from agentscope.embedding import DashScopeTextEmbedding
+from agentscope.embedding import DashScopeTextEmbedding, OpenAITextEmbedding
 
 
 class RAGKnowledgeBase(KnowledgeBase):
     """A RAG knowledge base supporting multiple document formats."""
-    
+
     def __init__(
         self,
         embedding_model: str = "dashscope",
-        model_name: str = "text-embedding-v4",
+        model_name: str = "text-embedding-v3",
         api_key: Optional[str] = None,
+        base_url: Optional[str] = None,
         persist_path: Optional[str] = "./persist_data",
         collection_name: str = "rag_knowledge_base",
         recreate: bool = False,
@@ -25,11 +26,12 @@ class RAGKnowledgeBase(KnowledgeBase):
     ) -> None:
         """
         Initialize the RAG knowledge base.
-        
+
         Args:
-            embedding_model: Type of embedding model ('openai' or 'dashscope').
+            embedding_model: Type of embedding model ('openai', 'dashscope', 'anthropic', 'custom').
             model_name: Name of the embedding model.
             api_key: API key for the embedding service.
+            base_url: Base URL for custom embedding API.
             persist_path: Path to persist the vector store.
             collection_name: Name of the collection in the vector store.
             recreate: Whether to recreate the knowledge base from scratch.
@@ -39,25 +41,33 @@ class RAGKnowledgeBase(KnowledgeBase):
         self.embedding_model_type = embedding_model
         self.model_name = model_name
         self.api_key = api_key or os.getenv("DASHSCOPE_API_KEY") or os.getenv("OPENAI_API_KEY")
-        
+        self.base_url = base_url
+
         # Create persist directory if it doesn't exist
         if persist_path:
             os.makedirs(persist_path, exist_ok=True)
-        
-        # Initialize embedding model (DashScope only)
-        if embedding_model != "dashscope":
-            raise ValueError("Only 'dashscope' embedding_model is supported in this deployment")
 
+        # Initialize embedding model based on type
         if not self.api_key:
-            raise ValueError("DashScope API key is required")
+            raise ValueError("API key is required")
 
-        self.embedding_model = DashScopeTextEmbedding(
-            model_name=model_name,
-            api_key=self.api_key
-        )
-        print(f"Using DashScope model: {model_name}")
-        # Default dimension: 1024 for text-embedding-v2, otherwise 1536
-        self.dimensions = 1024
+        if embedding_model == "dashscope":
+            # DashScope embedding 不使用 base_url
+            self.embedding_model = DashScopeTextEmbedding(
+                model_name=model_name,
+                api_key=self.api_key
+            )
+            self.dimensions = 1024
+            print(f"Using DashScope embedding model: {model_name}")
+        else:
+            # OpenAI compatible embedding (including custom providers)
+            self.embedding_model = OpenAITextEmbedding(
+                model_name=model_name,
+                api_key=self.api_key,
+                base_url=base_url,
+            )
+            self.dimensions = 1536
+            print(f"Using OpenAI compatible embedding model: {model_name}")
         
         # Initialize vector store
         qdrant_url = qdrant_url or os.getenv("QDRANT_URL")

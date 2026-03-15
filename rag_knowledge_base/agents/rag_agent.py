@@ -1,14 +1,14 @@
 """
 RAG 智能体 - 从知识库中检索信息并生成回答
 """
-from typing import Optional
+from typing import Optional, Dict, Any
 from agentscope.agent import AgentBase
 from agentscope.message import Msg, TextBlock
-from agentscope.model import DashScopeChatModel
+from agentscope.model import DashScopeChatModel, OpenAIChatModel
 from agentscope.tool import ToolResponse
 from agentscope.agent import ReActAgent
 from agentscope.tool import Toolkit
-from agentscope.formatter import DashScopeChatFormatter
+from agentscope.formatter import DashScopeChatFormatter, OpenAIChatFormatter
 from ..rag_knowledge import RAGKnowledgeBase
 
 
@@ -24,7 +24,8 @@ class SimpleRAGAgent(AgentBase):
         model_name: str = "qwen-max",
         api_key: Optional[str] = None,
         retrieve_limit: int = 5,
-        score_threshold: float = 0.5
+        score_threshold: float = 0.5,
+        llm_config: Optional[Dict[str, Any]] = None,
     ):
         """
         初始化 RAG 智能体
@@ -36,26 +37,37 @@ class SimpleRAGAgent(AgentBase):
             api_key: API 密钥（如果为 None，将从环境变量读取）
             retrieve_limit: 检索文档的最大数量
             score_threshold: 相似度阈值
+            llm_config: 语言模型配置字典，包含 provider, model_id, api_key, base_url
         """
         super().__init__()
         self.name = name
         self.kb = knowledge_base
-        self.model_name = model_name
-        self.api_key = api_key or knowledge_base.api_key
         self.retrieve_limit = retrieve_limit
         self.score_threshold = score_threshold
+
+        # 使用 llm_config 或回退到旧参数
+        if llm_config:
+            self.provider = llm_config.get("provider", "dashscope")
+            self.model_name = llm_config.get("model_id", model_name)
+            self.api_key = llm_config.get("api_key") or api_key or knowledge_base.api_key
+            # 对于 DashScope，不使用 base_url
+            raw_base_url = llm_config.get("base_url")
+            self.base_url = raw_base_url if self.provider != "dashscope" else None
+            print(f"[DEBUG] Provider: {self.provider}, model: {self.model_name}, base_url: {repr(self.base_url)}")
+        else:
+            self.provider = "dashscope"
+            self.model_name = model_name
+            self.api_key = api_key or knowledge_base.api_key
+            self.base_url = None
 
         # 初始化语言模型
         if not self.api_key:
             raise ValueError("API key is required for RAG agent")
 
-        self.model = DashScopeChatModel(
-            model_name=model_name,
-            api_key=self.api_key
-        )
+        self.model = self._create_model()
 
         # 创建 formatter、工具包并注册工具函数
-        formatter = DashScopeChatFormatter()
+        formatter = self._create_formatter()
         toolkit = Toolkit()
         toolkit.register_tool_function(self.retrieve_from_knowledge_base)
 
@@ -70,6 +82,39 @@ class SimpleRAGAgent(AgentBase):
             knowledge=self.kb,  # 与官方案例一致，RAGKnowledgeBase 继承 KnowledgeBase 后会自动转为列表
             max_iters=10,
         )
+
+    def _create_model(self):
+        """根据配置创建对应的模型实例"""
+        if self.provider == "dashscope":
+            # 使用 OpenAI 兼容模式，支持更多模型（如 qwen3.5-flash）
+            return OpenAIChatModel(
+                model_name=self.model_name,
+                api_key=self.api_key,
+                client_kwargs={"base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1"},
+                stream=True,
+            )
+        elif self.provider in ["openai", "anthropic", "custom"]:
+            # 使用 OpenAI 兼容格式
+            client_kwargs = {}
+            if self.base_url:
+                client_kwargs["base_url"] = self.base_url
+            return OpenAIChatModel(
+                model_name=self.model_name,
+                api_key=self.api_key,
+                client_kwargs=client_kwargs if client_kwargs else None,
+                stream=True,
+            )
+        else:
+            # 默认使用 DashScope
+            return DashScopeChatModel(
+                model_name=self.model_name,
+                api_key=self.api_key
+            )
+
+    def _create_formatter(self):
+        """根据配置创建对应的 formatter"""
+        # 所有供应商都使用 OpenAI 格式（包括使用兼容模式的 DashScope）
+        return OpenAIChatFormatter()
 
     async def retrieve_from_knowledge_base(self, query: str, limit: int = 5, score_threshold: float = 0.1) -> ToolResponse:
         """

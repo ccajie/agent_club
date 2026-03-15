@@ -5,6 +5,7 @@ FastAPI 后端 - 为 RPG 前端提供 API 服务
 import os
 import sys
 import asyncio
+import traceback
 from contextlib import asynccontextmanager
 from typing import List, Optional
 import shutil
@@ -25,6 +26,8 @@ from rag_knowledge_base.rag_knowledge import RAGKnowledgeBase
 from rag_knowledge_base.data.data_loader import DataLoader
 from rag_knowledge_base.agents.rag_agent import SpecializedRAGAgent
 from agentscope.message import Msg
+from providers import provider_manager
+from providers_api import router as providers_router
 
 # ============== 全局状态 ==============
 system_state = {
@@ -163,26 +166,68 @@ async def init_system():
     qdrant_url = os.getenv("QDRANT_URL")
     persist_path = None if qdrant_url else "./persist_data"
 
+    # 获取当前激活的 provider
+    active_provider = provider_manager.get_active_provider()
+
+    if not active_provider:
+        print("⚠️ No active provider configured. Please configure a provider in the settings.")
+        # Create empty knowledge base and agent without LLM
+        kb = RAGKnowledgeBase(
+            embedding_model="dashscope",
+            model_name="text-embedding-v4",
+            api_key=os.getenv("DASHSCOPE_API_KEY"),
+            persist_path=persist_path,
+            qdrant_url=qdrant_url,
+        )
+        loader = DataLoader(data_dir="./data/documents")
+        agent = None
+        system_state["kb"] = kb
+        system_state["loader"] = loader
+        system_state["agent"] = agent
+        system_state["initialized"] = True
+        return
+
+    # 使用激活的 provider 配置
+    provider_type = active_provider.provider_type
+    model_id = active_provider.model_id
+    api_key = active_provider.api_key
+    base_url = getattr(active_provider, 'base_url', None) or None  # 空字符串转为 None
+
+    print(f"🤖 Using active provider: {active_provider.name} ({provider_type})")
+    print(f"📚 Model: {model_id}")
+
+    # 使用配置的嵌入模型 (暂时使用 DashScope 作为默认 embedding)
     kb = RAGKnowledgeBase(
         embedding_model="dashscope",
         model_name="text-embedding-v4",
-        api_key=os.getenv("DASHSCOPE_API_KEY"),
+        api_key=api_key if provider_type == "dashscope" else os.getenv("DASHSCOPE_API_KEY"),
         persist_path=persist_path,
         qdrant_url=qdrant_url,
     )
 
     loader = DataLoader(data_dir="./data/documents")
 
+    # 使用配置的语言模型
     agent = SpecializedRAGAgent(
         name="RAG_Agent",
         knowledge_base=kb,
         score_threshold=0.1,
+        llm_config={
+            "provider": provider_type,
+            "model_id": model_id,
+            "api_key": api_key,
+            "base_url": base_url,
+        }
     )
 
     system_state["kb"] = kb
     system_state["loader"] = loader
     system_state["agent"] = agent
     system_state["initialized"] = True
+
+    if active_provider:
+        print(f"✅ RAG 系统使用语言模型: {active_provider.model_name} ({model_id})")
+    print(f"✅ RAG 系统使用嵌入模型: text-embedding-v4")
 
 
 # ============== FastAPI 应用 ==============
@@ -208,9 +253,35 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# 添加 providers 路由
+app.include_router(providers_router)
+
+
+# ============== 系统管理端点 ==============
+
+@app.post("/api/system/reinitialize")
+async def reinitialize():
+    """重新初始化系统（在 provider 变更后调用）"""
+    try:
+        # 重置初始化状态
+        system_state["initialized"] = False
+        system_state["agent"] = None
+        system_state["kb"] = None
+        system_state["loader"] = None
+
+        # 重新初始化
+        await init_system()
+
+        return {
+            "success": True,
+            "message": "系统已重新初始化",
+            "has_active_provider": system_state["agent"] is not None
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"重新初始化失败: {str(e)}")
+
 
 # ============== API 端点 ==============
-
 
 @app.post("/api/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest):
@@ -218,8 +289,11 @@ async def chat(request: ChatRequest):
     if not system_state["initialized"]:
         raise HTTPException(status_code=503, detail="系统未初始化")
 
+    agent = system_state["agent"]
+    if agent is None:
+        raise HTTPException(status_code=400, detail="请先配置并激活一个模型提供商")
+
     try:
-        agent = system_state["agent"]
         msg = Msg(name="User", content=request.message, role="user")
         response = await agent(msg)
 
@@ -241,7 +315,9 @@ async def chat(request: ChatRequest):
         return ChatResponse(answer=answer)
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"查询失败: {str(e)}")
+        error_detail = f"查询失败: {str(e)}\n\n详细错误:\n{traceback.format_exc()}"
+        print(error_detail)  # 也打印到服务器日志
+        raise HTTPException(status_code=500, detail=error_detail)
 
 
 @app.post("/api/upload", response_model=UploadResponse)
