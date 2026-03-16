@@ -39,6 +39,7 @@ class ProvidersConfig(BaseModel):
     """All providers configuration."""
     providers: List[ProviderConfig] = []
     active_provider_id: Optional[str] = None
+    active_embedding_provider_id: Optional[str] = None
     version: str = "1.0"
 
 
@@ -59,6 +60,7 @@ class ProviderManager:
         self._initialized = True
         self._providers: Dict[str, Provider] = {}
         self._active_provider_id: Optional[str] = None
+        self._active_embedding_provider_id: Optional[str] = None
         self._load_config()
 
     def _ensure_config_dir(self):
@@ -86,6 +88,7 @@ class ProviderManager:
                         self._providers[provider.id] = provider
 
                 self._active_provider_id = config.active_provider_id
+                self._active_embedding_provider_id = config.active_embedding_provider_id
                 print(f"✅ Loaded {len(self._providers)} providers from {PROVIDERS_FILE}")
             except Exception as e:
                 print(f"⚠️ Failed to load providers config: {e}")
@@ -145,6 +148,7 @@ class ProviderManager:
             config = ProvidersConfig(
                 providers=configs,
                 active_provider_id=self._active_provider_id,
+                active_embedding_provider_id=self._active_embedding_provider_id,
             )
 
             with open(PROVIDERS_FILE, 'w', encoding='utf-8') as f:
@@ -258,6 +262,28 @@ class ProviderManager:
         if not provider:
             return False, "Provider not found"
         return await provider.check_connection()
+
+    # ========== Embedding Provider Methods ==========
+
+    def get_embedding_provider(self) -> Optional[Provider]:
+        """Get the currently active embedding provider."""
+        if self._active_embedding_provider_id:
+            return self._providers.get(self._active_embedding_provider_id)
+        return None
+
+    def set_embedding_provider(self, provider_id: str) -> bool:
+        """Set the active embedding provider."""
+        if provider_id not in self._providers:
+            return False
+        self._active_embedding_provider_id = provider_id
+        self._save_config()
+        return True
+
+    def list_embedding_providers(self) -> List[ProviderInfo]:
+        """List all providers suitable for embedding (currently only DashScope)."""
+        # For now, embedding only supports DashScope
+        return [p.to_info(mask_secret=True) for p in self._providers.values()
+                if p.provider_type == ProviderType.DASHSCOPE]
 
 
 # Global instance

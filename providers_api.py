@@ -187,3 +187,51 @@ async def get_provider_types():
             },
         ]
     }
+
+
+# ========== Embedding Provider Endpoints ==========
+
+@router.get("/embedding")
+async def get_embedding_provider():
+    """Get the currently active embedding provider."""
+    manager = get_provider_manager()
+    provider = manager.get_embedding_provider()
+    return {
+        "embedding_provider": provider.to_info(mask_secret=True) if provider else None,
+    }
+
+
+@router.post("/embedding")
+async def set_embedding_provider(request: SetActiveRequest):
+    """Set the active embedding provider."""
+    manager = get_provider_manager()
+    success = manager.set_embedding_provider(request.provider_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Provider not found")
+
+    provider = manager.get_embedding_provider()
+    return {
+        "success": True,
+        "embedding_provider": provider.to_info(mask_secret=True) if provider else None,
+    }
+
+
+@router.get("/embedding/types")
+async def get_embedding_provider_types():
+    """Get available provider types for embedding (currently only DashScope)."""
+    return {
+        "types": [
+            {
+                "id": "dashscope",
+                "name": "阿里云 DashScope",
+                "description": "阿里云 DashScope 文本嵌入模型",
+                "required_fields": ["name", "api_key", "model_id", "model_name"],
+                "optional_fields": [],
+                "supported_models": [
+                    {"id": "text-embedding-v4", "name": "Text Embedding V4 (推荐)"},
+                    {"id": "text-embedding-v3", "name": "Text Embedding V3"},
+                    {"id": "text-embedding-v2", "name": "Text Embedding V2"},
+                ],
+            },
+        ]
+    }

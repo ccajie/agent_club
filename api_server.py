@@ -8,33 +8,39 @@ import asyncio
 import traceback
 from contextlib import asynccontextmanager
 from typing import List, Optional
-import shutil
 
-from fastapi import FastAPI, File, UploadFile, HTTPException
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 import subprocess
-import sys
 import argparse
 
 # 添加项目路径
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from rag_knowledge_base.rag_knowledge import RAGKnowledgeBase
-from rag_knowledge_base.data.data_loader import DataLoader
+# 恢复 ReAct Agent 导入（无知识库版本）
 from rag_knowledge_base.agents.rag_agent import SpecializedRAGAgent
 from agentscope.message import Msg
+# RAG 相关功能已禁用
+# from rag_knowledge_base.rag_knowledge import RAGKnowledgeBase
+# from rag_knowledge_base.data.data_loader import DataLoader
 from providers import provider_manager
 from providers_api import router as providers_router
 
+# ============== 全局状态 (RAG 功能已注释掉) ==============
+# system_state = {
+#     "kb": None,
+#     "loader": None,
+#     "agent": None,
+#     "initialized": False,
+# }
+
 # ============== 全局状态 ==============
 system_state = {
-    "kb": None,
-    "loader": None,
-    "agent": None,
     "initialized": False,
+    "agent": None,
 }
 
 # ============== 命令行参数 ==============
@@ -135,11 +141,10 @@ def build_frontend():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """应用生命周期管理"""
+    """应用生命周期管理 (RAG 功能已禁用)"""
     # 启动时初始化
-    print("🚀 正在初始化 RAG 系统...")
+    print("🚀 正在初始化系统...")
     await init_system()
-    print("✅ 系统初始化完成")
 
     # 仅在非开发模式下构建前端
     if BUILD_FRONTEND:
@@ -159,6 +164,53 @@ async def lifespan(app: FastAPI):
 
 
 async def init_system():
+    """初始化 ReAct Agent（无 RAG 知识库）"""
+    if system_state["initialized"]:
+        return
+
+    # 获取当前激活的 provider (对话模型)
+    active_provider = provider_manager.get_active_provider()
+
+    # 获取当前激活的 embedding provider (仅保留配置，不用于 RAG)
+    embedding_provider = provider_manager.get_embedding_provider()
+
+    if not active_provider:
+        print("⚠️ 未配置对话模型，请先配置 provider")
+        system_state["initialized"] = True
+        return
+
+    # 使用激活的 provider 配置
+    provider_type = active_provider.provider_type
+    model_id = active_provider.model_id
+    api_key = active_provider.api_key
+    base_url = getattr(active_provider, 'base_url', None) or None
+
+    print(f"🤖 对话模型: {active_provider.name} ({provider_type})")
+    print(f"📚 Model ID: {model_id}")
+
+    if embedding_provider:
+        print(f"📊 嵌入模型配置已加载: {embedding_provider.model_name} (暂不启用 RAG)")
+
+    # 创建 ReAct Agent（无知识库）
+    agent = SpecializedRAGAgent(
+        name="AI_Agent",
+        llm_config={
+            "provider": provider_type,
+            "model_id": model_id,
+            "api_key": api_key,
+            "base_url": base_url,
+        }
+    )
+
+    system_state["agent"] = agent
+    system_state["initialized"] = True
+
+    print(f"✅ ReAct Agent 初始化完成: {active_provider.model_name}")
+
+
+# 原始 RAG 初始化代码已注释掉
+'''
+async def init_system():
     """初始化 RAG 系统"""
     if system_state["initialized"]:
         return
@@ -166,16 +218,19 @@ async def init_system():
     qdrant_url = os.getenv("QDRANT_URL")
     persist_path = None if qdrant_url else "./persist_data"
 
-    # 获取当前激活的 provider
+    # 获取当前激活的 provider (对话模型)
     active_provider = provider_manager.get_active_provider()
+
+    # 获取当前激活的 embedding provider
+    embedding_provider = provider_manager.get_embedding_provider()
 
     if not active_provider:
         print("⚠️ No active provider configured. Please configure a provider in the settings.")
         # Create empty knowledge base and agent without LLM
         kb = RAGKnowledgeBase(
             embedding_model="dashscope",
-            model_name="text-embedding-v4",
-            api_key=os.getenv("DASHSCOPE_API_KEY"),
+            model_name=embedding_provider.model_id if embedding_provider else None,
+            api_key=embedding_provider.api_key if embedding_provider else None,
             persist_path=persist_path,
             qdrant_url=qdrant_url,
         )
@@ -191,19 +246,24 @@ async def init_system():
     provider_type = active_provider.provider_type
     model_id = active_provider.model_id
     api_key = active_provider.api_key
-    base_url = getattr(active_provider, 'base_url', None) or None  # 空字符串转为 None
+    base_url = getattr(active_provider, 'base_url', None) or None
 
     print(f"🤖 Using active provider: {active_provider.name} ({provider_type})")
     print(f"📚 Model: {model_id}")
 
-    # 使用配置的嵌入模型 (暂时使用 DashScope 作为默认 embedding)
-    kb = RAGKnowledgeBase(
-        embedding_model="dashscope",
-        model_name="text-embedding-v4",
-        api_key=api_key if provider_type == "dashscope" else os.getenv("DASHSCOPE_API_KEY"),
-        persist_path=persist_path,
-        qdrant_url=qdrant_url,
-    )
+    # 使用配置的嵌入模型
+    if embedding_provider:
+        print(f"📊 Using configured embedding: {embedding_provider.model_name}")
+        kb = RAGKnowledgeBase(
+            embedding_model="dashscope",
+            model_name=embedding_provider.model_id,
+            api_key=embedding_provider.api_key,
+            persist_path=persist_path,
+            qdrant_url=qdrant_url,
+        )
+    else:
+        print("⚠️ No embedding provider configured")
+        kb = None
 
     loader = DataLoader(data_dir="./data/documents")
 
@@ -224,10 +284,7 @@ async def init_system():
     system_state["loader"] = loader
     system_state["agent"] = agent
     system_state["initialized"] = True
-
-    if active_provider:
-        print(f"✅ RAG 系统使用语言模型: {active_provider.model_name} ({model_id})")
-    print(f"✅ RAG 系统使用嵌入模型: text-embedding-v4")
+'''
 
 
 # ============== FastAPI 应用 ==============
@@ -266,8 +323,6 @@ async def reinitialize():
         # 重置初始化状态
         system_state["initialized"] = False
         system_state["agent"] = None
-        system_state["kb"] = None
-        system_state["loader"] = None
 
         # 重新初始化
         await init_system()
@@ -285,13 +340,13 @@ async def reinitialize():
 
 @app.post("/api/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest):
-    """聊天接口"""
+    """聊天接口 - ReAct Agent 纯对话模式（无 RAG）"""
     if not system_state["initialized"]:
         raise HTTPException(status_code=503, detail="系统未初始化")
 
     agent = system_state["agent"]
     if agent is None:
-        raise HTTPException(status_code=400, detail="请先配置并激活一个模型提供商")
+        raise HTTPException(status_code=400, detail="请先配置并激活一个对话模型")
 
     try:
         msg = Msg(name="User", content=request.message, role="user")
@@ -315,11 +370,13 @@ async def chat(request: ChatRequest):
         return ChatResponse(answer=answer)
 
     except Exception as e:
-        error_detail = f"查询失败: {str(e)}\n\n详细错误:\n{traceback.format_exc()}"
-        print(error_detail)  # 也打印到服务器日志
+        error_detail = f"对话失败: {str(e)}\n\n详细错误:\n{traceback.format_exc()}"
+        print(error_detail)
         raise HTTPException(status_code=500, detail=error_detail)
 
 
+# ========== RAG 文档相关 API 已注释 ==========
+'''
 @app.post("/api/upload", response_model=UploadResponse)
 async def upload_document(file: UploadFile = File(...)):
     """上传文档"""
@@ -437,6 +494,7 @@ async def get_stats():
         totalFiles=stats.get("total_files", 0),
         totalSize=stats.get("total_size", 0),
     )
+'''
 
 
 @app.get("/api/health")

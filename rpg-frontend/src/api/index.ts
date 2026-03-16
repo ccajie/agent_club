@@ -1,8 +1,8 @@
 import axios from 'axios'
 import type {
   ChatResponse,
-  Document,
-  DocumentStats,
+  // Document,  // RAG 功能已禁用
+  // DocumentStats,  // RAG 功能已禁用
   ModelConfig,
   LLMConfig,
   EmbeddingConfig,
@@ -30,6 +30,8 @@ export const api = {
     return response.data
   },
 
+  // RAG 相关 API 已注释
+  /*
   // 上传文档
   async uploadDocument(file: File): Promise<{ success: boolean; message: string }> {
     const formData = new FormData()
@@ -60,6 +62,7 @@ export const api = {
     const response = await client.get<DocumentStats>('/stats')
     return response.data
   },
+  */
 
   // ========== 模型配置 API ==========
 
@@ -165,6 +168,26 @@ export const api = {
   // 重新初始化系统（在 provider 变更后调用）
   async reinitializeSystem(): Promise<{ success: boolean; message: string }> {
     const response = await client.post('/system/reinitialize')
+    return response.data
+  },
+
+  // ========== Embedding Provider API ==========
+
+  // 获取当前激活的 embedding provider
+  async getEmbeddingProvider(): Promise<{ embedding_provider: ProviderInfo | null }> {
+    const response = await client.get('/providers/embedding')
+    return response.data
+  },
+
+  // 设置激活的 embedding provider
+  async setEmbeddingProvider(providerId: string): Promise<{ success: boolean; embedding_provider: ProviderInfo | null }> {
+    const response = await client.post('/providers/embedding', { provider_id: providerId })
+    return response.data
+  },
+
+  // 获取 embedding provider 类型
+  async getEmbeddingProviderTypes(): Promise<{ types: ProviderTypeInfo[] }> {
+    const response = await client.get('/providers/embedding/types')
     return response.data
   },
 }

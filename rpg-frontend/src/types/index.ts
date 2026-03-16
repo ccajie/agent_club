@@ -113,6 +113,12 @@ export interface ProviderInfo {
   is_active: boolean
 }
 
+// Provider 支持的模型
+export interface ProviderSupportedModel {
+  id: string
+  name: string
+}
+
 // Provider 类型信息
 export interface ProviderTypeInfo {
   id: ProviderType
@@ -120,4 +126,5 @@ export interface ProviderTypeInfo {
   description: string
   required_fields: string[]
   optional_fields?: string[]
+  supported_models?: ProviderSupportedModel[]
 }
