@@ -129,6 +129,113 @@ html, body, #root {
   border-left: 3px solid var(--pixel-border);
 }
 
+/* 右下角浮动聊天窗口 */
+.chat-float-panel {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  width: 400px;
+  height: 75vh;
+  max-height: 600px;
+  display: flex;
+  flex-direction: column;
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.7), rgba(45, 52, 54, 0.7));
+  border: 3px solid var(--pixel-border);
+  border-radius: 16px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(10px);
+  z-index: 100;
+  overflow: hidden;
+}
+
+.chat-float-panel .chat-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  background: rgba(0, 0, 0, 0.3);
+  border-bottom: 2px solid var(--pixel-surface);
+  border-radius: 13px 13px 0 0;
+  cursor: pointer;
+}
+
+.chat-float-panel.collapsed .chat-header {
+  border-radius: 13px;
+  border-bottom: none;
+}
+
+.chat-header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.collapse-btn {
+  background: rgba(99, 110, 114, 0.5);
+  border: 2px solid var(--pixel-surface);
+  border-radius: 6px;
+  color: var(--pixel-text);
+  cursor: pointer;
+  padding: 4px 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.collapse-btn:hover {
+  background: var(--pixel-accent);
+  border-color: var(--pixel-accent);
+}
+
+/* 收起状态的聊天框 */
+.chat-float-panel.collapsed {
+  height: auto;
+  max-height: none;
+  width: 280px;
+}
+
+.chat-float-panel .chat-header h3 {
+  color: var(--pixel-text);
+  font-size: 16px;
+}
+
+.chat-float-panel .message-count {
+  color: rgba(223, 230, 233, 0.6);
+  font-size: 12px;
+}
+
+.chat-float-panel .messages-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.chat-float-panel .chat-input-area {
+  padding: 12px 16px;
+  background: rgba(0, 0, 0, 0.3);
+  border-top: 2px solid var(--pixel-surface);
+  border-radius: 0 0 13px 13px;
+}
+
+.chat-float-panel .input-hint {
+  text-align: center;
+  margin-top: 6px;
+  font-size: 11px;
+  color: rgba(223, 230, 233, 0.5);
+}
+
+/* 调整场景面板 */
+.chat-layout .scene-panel {
+  width: 100%;
+  height: 100%;
+  position: relative;
+  overflow: hidden;
+}
+
 .chat-header {
   display: flex;
   justify-content: space-between;
@@ -156,6 +263,110 @@ html, body, #root {
   display: flex;
   flex-direction: column;
   gap: 16px;
+}
+
+/* 浮动窗口中的消息样式 */
+.chat-float-panel .message {
+  display: flex;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  max-width: 100%;
+}
+
+.chat-float-panel .message.user {
+  background: rgba(0, 184, 148, 0.15);
+  border: 2px solid rgba(0, 184, 148, 0.3);
+  align-self: flex-end;
+  flex-direction: row-reverse;
+}
+
+.chat-float-panel .message.assistant {
+  background: rgba(155, 89, 182, 0.15);
+  border: 2px solid rgba(155, 89, 182, 0.3);
+  align-self: flex-start;
+}
+
+.chat-float-panel .message.error {
+  background: rgba(214, 48, 49, 0.15);
+  border: 2px solid rgba(214, 48, 49, 0.3);
+  align-self: flex-start;
+}
+
+.chat-float-panel .message-avatar {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  flex-shrink: 0;
+}
+
+.chat-float-panel .message-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.chat-float-panel .message-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+  flex-wrap: wrap;
+}
+
+.chat-float-panel .message-author {
+  font-weight: 600;
+  color: var(--pixel-text);
+  font-size: 12px;
+}
+
+.chat-float-panel .message-role {
+  font-size: 10px;
+  color: rgba(223, 230, 233, 0.6);
+  background: rgba(99, 110, 114, 0.3);
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+
+.chat-float-panel .message-time {
+  color: rgba(223, 230, 233, 0.5);
+  font-size: 10px;
+  margin-left: auto;
+}
+
+.chat-float-panel .message-text {
+  color: var(--pixel-text);
+  font-size: 13px;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.chat-float-panel .empty-chat {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: rgba(223, 230, 233, 0.5);
+  text-align: center;
+}
+
+.chat-float-panel .empty-icon {
+  font-size: 48px;
+  margin-bottom: 12px;
+}
+
+.chat-float-panel .empty-chat p {
+  font-size: 14px;
+  margin-bottom: 6px;
+}
+
+.chat-float-panel .empty-hint {
+  font-size: 12px;
+  opacity: 0.7;
 }
 
 .empty-chat {
@@ -237,6 +448,15 @@ html, body, #root {
   font-weight: 600;
   color: var(--pixel-text);
   font-size: 14px;
+}
+
+.message-role {
+  font-size: 12px;
+  color: rgba(223, 230, 233, 0.6);
+  background: rgba(99, 110, 114, 0.3);
+  padding: 2px 8px;
+  border-radius: 4px;
+  margin-left: 8px;
 }
 
 .message-time {

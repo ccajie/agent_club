@@ -8,20 +8,76 @@ export interface ChatMessage {
   content: string
   timestamp: number
   isError?: boolean
+  agentName?: string  // 哪个 Agent 发的消息
+  agentRole?: string  // Agent 角色
 }
 
-export interface Document {
+// ========== 多 Agent 系统类型 ==========
+
+export interface AgentInfo {
   id: string
   name: string
-  md5: string
-  partsCount: number
-  size: number
-  uploadedAt: string
+  role: string
+  personality: string
+  avatar_type: string
+}
+
+// ========== Agent 配置类型（每个 Agent 独立配置） ==========
+
+export type AvatarType = 'aiden' | 'wrench'
+
+export interface AgentConfig {
+  id: string
+  name: string
+  role: string
+  personality: string
+  avatar_type: AvatarType
+  provider_type: ProviderType
+  model_id: string
+  model_name: string
+  api_key: string
+  base_url: string
+  created_at: string
+  updated_at: string
+  is_active: boolean
+}
+
+export interface CreateAgentRequest {
+  name: string
+  role: string
+  personality: string
+  provider_type: ProviderType
+  model_id: string
+  model_name: string
+  api_key: string
+  base_url: string
+}
+
+export interface UpdateAgentRequest {
+  name?: string
+  role?: string
+  personality?: string
+  avatar_type?: AvatarType
+  provider_type?: ProviderType
+  model_id?: string
+  model_name?: string
+  api_key?: string
+  base_url?: string
+  is_active?: boolean
+}
+
+export interface AgentResponse {
+  agent_name: string
+  agent_role: string
+  content: string
 }
 
 export interface ChatResponse {
-  answer: string
-  sources?: string[]
+  responses: AgentResponse[]
+}
+
+export interface AgentListResponse {
+  agents: AgentInfo[]
 }
 
 export interface DocumentStats {

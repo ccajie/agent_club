@@ -2,11 +2,11 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 import Phaser from 'phaser'
 import { ChatScene } from './game/ChatScene'
 import { ChatInput } from './components/ChatInput'
-import { ProviderConfigPage } from './pages/ProviderConfigPage'
-import type { ChatMessage, RobotStatus } from './types'
+import { AgentConfigPage } from './pages/AgentConfigPage'
+import type { ChatMessage, RobotStatus, AgentInfo } from './types'
 import { api } from './api'
 
-type Page = 'chat' | 'providers'
+type Page = 'chat' | 'agents'
 
 // 流式输出消息组件
 function StreamingMessage({ content, isStreaming, onComplete }: {
@@ -60,6 +60,20 @@ const ModelIcon = () => (
   </svg>
 )
 
+// 收起图标（向下箭头）
+const CollapseIcon = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <polyline points="6 9 12 15 18 9"/>
+  </svg>
+)
+
+// 展开图标（向上箭头）
+const ExpandIcon = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <polyline points="18 15 12 9 6 15"/>
+  </svg>
+)
+
 function App() {
   const gameRef = useRef<Phaser.Game | null>(null)
   const sceneRef = useRef<ChatScene | null>(null)
@@ -67,13 +81,14 @@ function App() {
   const [robotStatus, setRobotStatus] = useState<RobotStatus>('idle')
   const [isProcessing, setIsProcessing] = useState(false)
   const [currentPage, setCurrentPage] = useState<Page>('chat')
+  const [agents, setAgents] = useState<AgentInfo[]>([])
 
   // 初始化 Phaser 游戏
   useEffect(() => {
     if (currentPage !== 'chat') return
 
     const gameContainer = document.getElementById('game-container')
-    const width = gameContainer?.clientWidth || window.innerWidth / 2
+    const width = gameContainer?.clientWidth || window.innerWidth
     const height = gameContainer?.clientHeight || window.innerHeight
 
     const config: Phaser.Types.Core.GameConfig = {
@@ -97,11 +112,9 @@ function App() {
       const scene = gameRef.current?.scene.getScene('ChatScene') as ChatScene
       if (scene) {
         sceneRef.current = scene
-        // 设置场景回调
-        scene.setCallbacks({
-          onPlayerMessage: handlePlayerMessage,
-          onNPCAnimationComplete: () => setRobotStatus('idle')
-        })
+        console.log('ChatScene initialized, agents count:', agents.length)
+        // 传递 agents 信息（即使为空也要传递，让场景知道当前状态）
+        scene.setAgents(agents)
         clearInterval(checkScene)
       }
     }, 100)
@@ -109,7 +122,7 @@ function App() {
     // 响应窗口大小变化
     const handleResize = () => {
       const gameContainer = document.getElementById('game-container')
-      const width = gameContainer?.clientWidth || window.innerWidth / 2
+      const width = gameContainer?.clientWidth || window.innerWidth
       const height = gameContainer?.clientHeight || window.innerHeight
       gameRef.current?.scale.resize(width, height)
     }
@@ -127,6 +140,49 @@ function App() {
   // 流式输出状态
   const [streamingId, setStreamingId] = useState<string | null>(null)
   const [streamingContent, setStreamingContent] = useState('')
+  const [isChatCollapsed, setIsChatCollapsed] = useState(false)
+
+  // 获取 Agent 列表
+  useEffect(() => {
+    const fetchAgents = async () => {
+      try {
+        console.log('Fetching agents for page:', currentPage)
+        const agentList = await api.getAgents()
+        console.log('Fetched agents:', agentList.length, agentList)
+        setAgents(agentList)
+      } catch (err) {
+        console.error('Failed to fetch agents:', err)
+      }
+    }
+    fetchAgents()
+  }, [currentPage])
+
+  // 监听 agent 更新事件（从配置页面返回时刷新）
+  useEffect(() => {
+    const handleAgentUpdated = () => {
+      console.log('Agent updated event received, refreshing...')
+      const fetchAgents = async () => {
+        try {
+          const agentList = await api.getAgents()
+          console.log('Refreshed agents after update:', agentList.length, agentList)
+          setAgents(agentList)
+        } catch (err) {
+          console.error('Failed to refresh agents:', err)
+        }
+      }
+      fetchAgents()
+    }
+    window.addEventListener('agentUpdated', handleAgentUpdated)
+    return () => window.removeEventListener('agentUpdated', handleAgentUpdated)
+  }, [])
+
+  // 当 agents 变化时，更新场景
+  useEffect(() => {
+    if (sceneRef.current && agents.length > 0) {
+      console.log('Setting agents to scene:', agents)
+      sceneRef.current.setAgents(agents)
+    }
+  }, [agents])
 
   // 处理玩家消息
   const handlePlayerMessage = useCallback(async (text: string) => {
@@ -147,39 +203,43 @@ function App() {
     sceneRef.current?.showPlayerDialog(text)
 
     try {
-      // 调用后端 API
-      const response = await api.chat(text)
+      // 调用后端 API - 现在返回多 Agent 响应
+      const responses = await api.chat(text)
 
       // 切换到说话状态
       setRobotStatus('speaking')
 
-      // 创建AI消息（初始为空，用于流式显示）
-      const aiMessageId = (Date.now() + 1).toString()
-      const aiMessage: ChatMessage = {
-        id: aiMessageId,
-        role: 'assistant',
-        content: response.answer,
-        timestamp: Date.now()
-      }
-      setMessages(prev => [...prev, aiMessage])
+      // 依次显示每个 Agent 的回复
+      for (let i = 0; i < responses.length; i++) {
+        const agentResponse = responses[i]
+        const messageId = (Date.now() + i + 1).toString()
 
-      // 开始流式输出
-      setStreamingId(aiMessageId)
-      setStreamingContent(response.answer)
+        // 添加消息到列表
+        const aiMessage: ChatMessage = {
+          id: messageId,
+          role: 'assistant',
+          content: agentResponse.content,
+          timestamp: Date.now(),
+          agentName: agentResponse.agent_name,
+          agentRole: agentResponse.agent_role
+        }
+        setMessages(prev => [...prev, aiMessage])
 
-      // 在场景中显示NPC说话动画（不显示内容）
-      const currentScene = sceneRef.current
-      if (currentScene) {
-        currentScene.showNPCDialog(response.answer, () => {
-          setRobotStatus('idle')
-          setIsProcessing(false)
-        })
-      } else {
-        // 如果没有场景，直接结束
-        setTimeout(() => {
-          setRobotStatus('idle')
-          setIsProcessing(false)
-        }, 1000)
+        // 高亮当前说话的 Agent
+        sceneRef.current?.highlightAgent(agentResponse.agent_name)
+        sceneRef.current?.showNPCDialog(agentResponse.content, agentResponse.agent_name)
+
+        // 最后一个 Agent 回复完成后恢复状态
+        if (i === responses.length - 1) {
+          setTimeout(() => {
+            sceneRef.current?.resetAgentHighlight()
+            setRobotStatus('idle')
+            setIsProcessing(false)
+          }, 3000)
+        } else {
+          // 等待一段时间再显示下一个 Agent 的回复
+          await new Promise(resolve => setTimeout(resolve, 1500))
+        }
       }
 
     } catch (error: any) {
@@ -238,11 +298,11 @@ function App() {
             <span>聊天</span>
           </button>
           <button
-            className={`nav-item ${currentPage === 'providers' ? 'active' : ''}`}
-            onClick={() => setCurrentPage('providers')}
+            className={`nav-item ${currentPage === 'agents' ? 'active' : ''}`}
+            onClick={() => setCurrentPage('agents')}
           >
             <ModelIcon />
-            <span>模型配置</span>
+            <span>Agent 配置</span>
           </button>
         </div>
       </nav>
@@ -251,24 +311,35 @@ function App() {
       <main className="main-content">
         {currentPage === 'chat' && (
           <div className="chat-layout">
-            {/* 左侧 - AI 机器人场景 */}
-            <div className="scene-panel">
+            {/* 全屏 - AI 机器人场景 */}
+            <div className="scene-panel" style={{ width: '100%', height: '100%' }}>
               <div id="game-container" className="game-container" />
             </div>
 
-            {/* 右侧 - 聊天记录 */}
-            <div className="chat-panel">
+            {/* 右下角浮动聊天窗口 */}
+            <div className={`chat-float-panel ${isChatCollapsed ? 'collapsed' : ''}`}>
               <div className="chat-header">
-                <h3>💬 聊天记录</h3>
-                <span className="message-count">{messages.length} 条消息</span>
+                <div className="chat-header-left">
+                  <h3>💬 聊天记录</h3>
+                  <span className="message-count">{messages.length} 条消息</span>
+                </div>
+                <button
+                  className="collapse-btn"
+                  onClick={() => setIsChatCollapsed(!isChatCollapsed)}
+                  title={isChatCollapsed ? '展开' : '收起'}
+                >
+                  {isChatCollapsed ? <ExpandIcon /> : <CollapseIcon />}
+                </button>
               </div>
 
+              {!isChatCollapsed && (
+              <>
               <div className="messages-list">
                 {messages.length === 0 ? (
                   <div className="empty-chat">
                     <div className="empty-icon">🤖</div>
-                    <p>开始与 AI 助手对话吧！</p>
-                    <span className="empty-hint">输入消息，AI 助手会为你解答问题</span>
+                    <p>开始与 AI 助手们对话吧！</p>
+                    <span className="empty-hint">输入消息，多个 AI Agent 会为你解答问题</span>
                   </div>
                 ) : (
                   messages.map((msg) => (
@@ -282,8 +353,15 @@ function App() {
                       <div className="message-content">
                         <div className="message-header">
                           <span className="message-author">
-                            {msg.role === 'user' ? '你' : msg.isError ? '错误' : 'AI 助手'}
+                            {msg.role === 'user'
+                              ? '你'
+                              : msg.isError
+                                ? '错误'
+                                : msg.agentName || 'AI 助手'}
                           </span>
+                          {msg.agentRole && (
+                            <span className="message-role">{msg.agentRole}</span>
+                          )}
                           <span className="message-time">
                             {new Date(msg.timestamp).toLocaleTimeString()}
                           </span>
@@ -319,11 +397,13 @@ function App() {
                   )}
                 </div>
               </div>
+              </>
+              )}
             </div>
           </div>
         )}
 
-        {currentPage === 'providers' && <ProviderConfigPage />}
+        {currentPage === 'agents' && <AgentConfigPage />}
       </main>
     </div>
   )
