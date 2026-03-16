@@ -1,51 +1,40 @@
 import { useState, useEffect } from 'react'
-import type { AgentConfig, ProviderType } from '../types'
-import { api, ProviderTypeInfo, ProviderModel } from '../api'
+import type { AgentConfig, Provider } from '../types'
+import { api } from '../api'
 
 interface AgentFormData {
   name: string
   role: string
   personality: string
-  provider_type: ProviderType
-  model_id: string
-  model_name: string
-  api_key: string
-  base_url: string
+  provider_id: string
 }
 
 const initialFormData: AgentFormData = {
   name: '',
   role: '',
   personality: '',
-  provider_type: 'dashscope',
-  model_id: '',
-  model_name: '',
-  api_key: '',
-  base_url: '',
+  provider_id: '',
 }
 
 export const AgentConfigPage = () => {
   const [agents, setAgents] = useState<AgentConfig[]>([])
+  const [providers, setProviders] = useState<Provider[]>([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
   const [editingAgent, setEditingAgent] = useState<AgentConfig | null>(null)
   const [formData, setFormData] = useState<AgentFormData>(initialFormData)
-  const [testing, setTesting] = useState(false)
-  const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null)
   const [saving, setSaving] = useState(false)
   const [reinitializing, setReinitializing] = useState(false)
-  const [providerTypes, setProviderTypes] = useState<ProviderTypeInfo[]>([])
-  const [providerModels, setProviderModels] = useState<Record<string, ProviderModel[]>>({})
 
   useEffect(() => {
     loadData()
   }, [])
 
   const loadData = async () => {
-    console.log('Loading agent data...')
+    console.log('Loading agent and provider data...')
     setLoading(true)
 
-    // 独立加载每个数据，一个失败不影响其他
+    // 加载 Agents
     try {
       const agentsRes = await api.getAgentConfigs(true)
       console.log('Loaded agents:', agentsRes)
@@ -55,29 +44,29 @@ export const AgentConfigPage = () => {
       alert('加载 Agent 列表失败')
     }
 
+    // 加载 Providers
     try {
-      const typesRes = await api.getProviderTypes()
-      console.log('Loaded provider types:', typesRes.types)
-      setProviderTypes(typesRes.types)
+      const providersRes = await api.getProviders()
+      console.log('Loaded providers:', providersRes)
+      setProviders(providersRes)
     } catch (error) {
-      console.error('Failed to load provider types:', error)
-    }
-
-    try {
-      const modelsRes = await api.getProviderModels()
-      console.log('Loaded provider models:', modelsRes.models)
-      setProviderModels(modelsRes.models)
-    } catch (error) {
-      console.error('Failed to load provider models:', error)
+      console.error('Failed to load providers:', error)
+      alert('加载 Provider 列表失败，请先配置 Provider')
     }
 
     setLoading(false)
   }
 
   const handleAddClick = () => {
+    if (providers.length === 0) {
+      alert('请先配置 Provider（模型），再创建 Agent')
+      return
+    }
     setEditingAgent(null)
-    setFormData(initialFormData)
-    setTestResult(null)
+    setFormData({
+      ...initialFormData,
+      provider_id: providers[0]?.id || '',
+    })
     setShowForm(true)
   }
 
@@ -87,13 +76,8 @@ export const AgentConfigPage = () => {
       name: agent.name,
       role: agent.role,
       personality: agent.personality,
-      provider_type: agent.provider_type,
-      model_id: agent.model_id,
-      model_name: agent.model_name,
-      api_key: '', // Don't show existing API key
-      base_url: agent.base_url,
+      provider_id: agent.provider_id,
     })
-    setTestResult(null)
     setShowForm(true)
   }
 
@@ -101,44 +85,11 @@ export const AgentConfigPage = () => {
     setShowForm(false)
     setEditingAgent(null)
     setFormData(initialFormData)
-    setTestResult(null)
-  }
-
-  const handleTest = async () => {
-    if (!formData.api_key) {
-      alert('请先填写 API Key')
-      return
-    }
-    setTesting(true)
-    setTestResult(null)
-    try {
-      const result = await api.testConnectionTemp({
-        provider_type: formData.provider_type,
-        api_key: formData.api_key,
-        model_id: formData.model_id,
-        base_url: formData.base_url || undefined,
-      })
-      setTestResult(result)
-    } catch (error) {
-      setTestResult({ success: false, message: '测试失败' })
-    } finally {
-      setTesting(false)
-    }
   }
 
   const handleSave = async () => {
-    if (!formData.name || !formData.role || !formData.api_key || !formData.model_id) {
+    if (!formData.name || !formData.role || !formData.personality || !formData.provider_id) {
       alert('请填写所有必填字段')
-      return
-    }
-
-    // 根据提供商类型处理 base_url
-    let baseUrl = formData.base_url
-    if (formData.provider_type === 'dashscope') {
-      // DashScope 使用默认 URL（OpenAI 兼容模式）
-      baseUrl = 'https://dashscope.aliyuncs.com/compatible-mode/v1'
-    } else if ((formData.provider_type === 'anthropic' || formData.provider_type === 'custom') && !formData.base_url) {
-      alert('Anthropic 协议和自定义提供商需要填写 Base URL')
       return
     }
 
@@ -146,12 +97,7 @@ export const AgentConfigPage = () => {
       name: formData.name,
       role: formData.role,
       personality: formData.personality,
-      provider_type: formData.provider_type,
-      model_id: formData.model_id,
-      model_name: formData.model_name || formData.model_id,
-      api_key: formData.api_key,
-      base_url: baseUrl,
-      is_active: true,
+      provider_id: formData.provider_id,
     }
 
     console.log('Saving agent data:', saveData)
@@ -171,7 +117,6 @@ export const AgentConfigPage = () => {
         console.log('System reinitialized successfully')
       } catch (reinitError) {
         console.warn('System reinitialization failed:', reinitError)
-        // 不影响保存成功的提示
       }
       // 通知 App.tsx 刷新 agents 列表
       window.dispatchEvent(new CustomEvent('agentUpdated'))
@@ -222,17 +167,10 @@ export const AgentConfigPage = () => {
     }
   }
 
-  // 默认提供商类型（备用）
-  const defaultProviderTypes: ProviderTypeInfo[] = [
-    { id: 'dashscope', name: '阿里云 DashScope', description: '阿里云大模型服务平台', required_fields: ['api_key', 'model_id'] },
-    { id: 'anthropic', name: 'Anthropic 协议', description: '支持 Anthropic Claude API 协议的模型', required_fields: ['api_key', 'base_url', 'model_id'] },
-    { id: 'openai', name: 'OpenAI', description: 'OpenAI 官方 API', required_fields: ['api_key', 'model_id'], optional_fields: ['base_url'] },
-    { id: 'custom', name: '自定义 OpenAI 兼容', description: '任何 OpenAI 兼容的 API 服务', required_fields: ['api_key', 'base_url', 'model_id'] },
-  ]
-
-  const effectiveProviderTypes = providerTypes.length > 0 ? providerTypes : defaultProviderTypes
-  const currentType = effectiveProviderTypes.find(t => t.id === formData.provider_type)
-  const currentModels = providerModels[formData.provider_type] || []
+  const getProviderName = (providerId: string) => {
+    const provider = providers.find(p => p.id === providerId)
+    return provider ? `${provider.name} (${provider.model_name || provider.model_id})` : providerId
+  }
 
   if (loading) {
     return <div className="providers-page loading">加载中...</div>
@@ -258,7 +196,7 @@ export const AgentConfigPage = () => {
 
       <div className="tab-description">
         <p>
-          每个 Agent 可以独立配置模型、API 密钥、角色和性格。
+          每个 Agent 需要配置名称、角色、性格，并选择一个已配置的 Provider（模型）。
           系统启动时会自动加载所有启用的 Agent。
         </p>
       </div>
@@ -267,9 +205,15 @@ export const AgentConfigPage = () => {
         {agents.length === 0 ? (
           <div className="empty-state">
             <p>还没有配置任何 Agent</p>
-            <button className="add-btn" onClick={handleAddClick}>
-              添加第一个 Agent
-            </button>
+            {providers.length === 0 ? (
+              <p style={{ color: '#999', fontSize: '14px', marginTop: '8px' }}>
+                请先前往 Provider 配置页面添加模型
+              </p>
+            ) : (
+              <button className="add-btn" onClick={handleAddClick}>
+                添加第一个 Agent
+              </button>
+            )}
           </div>
         ) : (
           agents.map(agent => (
@@ -287,9 +231,7 @@ export const AgentConfigPage = () => {
                 <div className="provider-details">
                   <span className="provider-type">{agent.role}</span>
                   <span className="model-name">
-                    {agent.provider_type === 'dashscope' ? 'DashScope' :
-                     agent.provider_type === 'anthropic' ? 'Anthropic' :
-                     agent.provider_type === 'openai' ? 'OpenAI' : 'Custom'} / {agent.model_name || agent.model_id}
+                    使用: {getProviderName(agent.provider_id)}
                   </span>
                 </div>
                 <div className="provider-meta">
@@ -318,7 +260,7 @@ export const AgentConfigPage = () => {
       {/* Form Modal */}
       {showForm && (
         <div className="modal-overlay">
-          <div className="modal" style={{ maxWidth: '600px' }}>
+          <div className="modal" style={{ maxWidth: '500px' }}>
             <div className="modal-header">
               <h3>{editingAgent ? '编辑 Agent' : '添加 Agent'}</h3>
               <button className="close-btn" onClick={handleCloseForm}>×</button>
@@ -371,134 +313,52 @@ export const AgentConfigPage = () => {
                 </div>
               </div>
 
-              {/* 模型配置 */}
+              {/* Provider 选择 */}
               <div className="form-section" style={{ marginBottom: '24px' }}>
                 <h4 style={{ marginBottom: '12px', color: 'var(--pixel-accent)' }}>模型配置</h4>
 
                 <div className="form-group">
-                  <label>模型提供商 *</label>
+                  <label>选择 Provider *</label>
                   <select
-                    value={formData.provider_type}
-                    onChange={e => setFormData({ ...formData, provider_type: e.target.value as ProviderType })}
+                    value={formData.provider_id}
+                    onChange={e => setFormData({ ...formData, provider_id: e.target.value })}
                   >
-                    {effectiveProviderTypes.map(type => (
-                      <option key={type.id} value={type.id}>
-                        {type.name}
+                    <option value="">请选择 Provider</option>
+                    {providers.map(provider => (
+                      <option key={provider.id} value={provider.id}>
+                        {provider.name} - {provider.model_name || provider.model_id}
                       </option>
                     ))}
                   </select>
-                  <span className="hint">{currentType?.description}</span>
+                  <span className="hint">
+                    Provider 包含模型配置和 API 密钥，请在 Provider 配置页面管理
+                  </span>
                 </div>
 
-                {/* 推荐模型 */}
-                {currentModels.length > 0 && (
-                  <div className="form-group">
-                    <label>推荐模型</label>
-                    <div className="supported-models">
-                      {currentModels.map(model => (
-                        <span
-                          key={model.id}
-                          className="model-tag"
-                          onClick={() => setFormData({ ...formData, model_id: model.id, model_name: model.name })}
-                          style={{
-                            cursor: 'pointer',
-                            background: formData.model_id === model.id ? 'var(--pixel-accent)' : 'rgba(0, 184, 148, 0.2)',
-                            color: formData.model_id === model.id ? 'white' : 'var(--pixel-accent)',
-                          }}
-                        >
-                          {model.name}
-                        </span>
-                      ))}
-                    </div>
-                    <span className="hint">点击选择模型</span>
-                  </div>
-                )}
-
-                <div className="form-row">
-                  <div className="form-group flex-1">
-                    <label>模型 ID *</label>
-                    <input
-                      type="text"
-                      value={formData.model_id}
-                      onChange={e => setFormData({ ...formData, model_id: e.target.value })}
-                      placeholder="例如：qwen-max"
-                    />
-                  </div>
-                  <div className="form-group flex-1">
-                    <label>模型显示名称（可选）</label>
-                    <input
-                      type="text"
-                      value={formData.model_name}
-                      onChange={e => setFormData({ ...formData, model_name: e.target.value })}
-                      placeholder="留空使用模型ID"
-                    />
-                  </div>
-                </div>
-
-                {/* Base URL 字段 - 根据提供商类型显示 */}
-                {formData.provider_type === 'dashscope' && (
-                  <div className="form-group">
-                    <label>Base URL</label>
-                    <input
-                      type="text"
-                      value="https://dashscope.aliyuncs.com/compatible-mode/v1"
-                      disabled
-                      style={{ opacity: 0.6, cursor: 'not-allowed' }}
-                    />
-                    <span className="hint">DashScope 使用默认 OpenAI 兼容模式地址</span>
-                  </div>
-                )}
-                {(formData.provider_type === 'anthropic' || formData.provider_type === 'custom') && (
-                  <div className="form-group">
-                    <label>Base URL *</label>
-                    <input
-                      type="text"
-                      value={formData.base_url}
-                      onChange={e => setFormData({ ...formData, base_url: e.target.value })}
-                      placeholder="https://api.example.com/v1"
-                    />
-                    <span className="hint">API 服务的基础地址（必填）</span>
-                  </div>
-                )}
-                {formData.provider_type === 'openai' && (
-                  <div className="form-group">
-                    <label>Base URL（可选）</label>
-                    <input
-                      type="text"
-                      value={formData.base_url}
-                      onChange={e => setFormData({ ...formData, base_url: e.target.value })}
-                      placeholder="https://api.openai.com/v1"
-                    />
-                    <span className="hint">留空使用默认 OpenAI 地址</span>
-                  </div>
-                )}
-
-                <div className="form-group">
-                  <label>API Key *</label>
-                  <input
-                    type="password"
-                    value={formData.api_key}
-                    onChange={e => setFormData({ ...formData, api_key: e.target.value })}
-                    placeholder={editingAgent ? '留空表示不修改' : '输入 API Key'}
-                  />
-                </div>
-
-                {testResult && (
-                  <div className={`test-result ${testResult.success ? 'success' : 'error'}`}>
-                    {testResult.success ? '✅' : '❌'} {testResult.message}
+                {formData.provider_id && (
+                  <div className="provider-info-box" style={{
+                    marginTop: '12px',
+                    padding: '12px',
+                    background: 'rgba(0, 184, 148, 0.1)',
+                    borderRadius: '8px',
+                    fontSize: '13px',
+                  }}>
+                    {(() => {
+                      const p = providers.find(pr => pr.id === formData.provider_id)
+                      return p ? (
+                        <>
+                          <div><strong>类型:</strong> {p.provider_type}</div>
+                          <div><strong>模型:</strong> {p.model_name || p.model_id}</div>
+                          <div><strong>Base URL:</strong> {p.base_url || '默认'}</div>
+                        </>
+                      ) : null
+                    })()}
                   </div>
                 )}
               </div>
             </div>
 
             <div className="modal-footer">
-              <button
-                className="test-btn"
-                onClick={handleTest}
-                disabled={testing || !formData.api_key}
-              >
-                {testing ? '测试中...' : '测试连接'}
-              </button>
               <div className="footer-actions">
                 <button className="cancel-btn" onClick={handleCloseForm}>
                   取消

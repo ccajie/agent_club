@@ -26,7 +26,8 @@
       "Bash(cd:*)",
       "Bash(npm run:*)",
       "Bash(/opt/homebrew/bin/pip3 install:*)",
-      "Bash(curl:*)"
+      "Bash(curl:*)",
+      "Bash(find:*)"
     ]
   }
 }

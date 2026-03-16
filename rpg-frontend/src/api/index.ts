@@ -9,6 +9,9 @@ import type {
   TestConnectionResponse,
   ProviderType,
   AvatarType,
+  Provider,
+  CreateProviderRequest,
+  UpdateProviderRequest,
 } from '../types'
 
 // 自动检测环境：开发模式使用代理，生产模式使用相对路径
@@ -105,6 +108,38 @@ export const api = {
   // 获取推荐模型列表
   async getProviderModels(): Promise<{ models: Record<string, ProviderModel[]> }> {
     const response = await client.get('/agents-config/provider-models')
+    return response.data
+  },
+
+  // ========== Provider API ==========
+
+  // 获取所有 Provider
+  async getProviders(): Promise<Provider[]> {
+    const response = await client.get<{ providers: Provider[] }>('/providers')
+    return response.data.providers
+  },
+
+  // 创建新 Provider
+  async createProvider(data: CreateProviderRequest): Promise<Provider> {
+    const response = await client.post<Provider>('/providers', data)
+    return response.data
+  },
+
+  // 更新 Provider
+  async updateProvider(providerId: string, data: UpdateProviderRequest): Promise<Provider> {
+    const response = await client.put<Provider>(`/providers/${providerId}`, data)
+    return response.data
+  },
+
+  // 删除 Provider
+  async deleteProvider(providerId: string): Promise<{ success: boolean }> {
+    const response = await client.delete<{ success: boolean }>(`/providers/${providerId}`)
+    return response.data
+  },
+
+  // 测试 Provider 连接
+  async testProvider(providerId: string): Promise<TestConnectionResponse> {
+    const response = await client.post<TestConnectionResponse>(`/providers/${providerId}/test`)
     return response.data
   },
 

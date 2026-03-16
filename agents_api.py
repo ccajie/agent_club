@@ -11,29 +11,21 @@ router = APIRouter(prefix="/api/agents-config", tags=["agents-config"])
 
 
 class CreateAgentRequest(BaseModel):
-    """创建 Agent 请求"""
+    """创建 Agent 请求 - 引用 Provider"""
     name: str = Field(..., description="Agent 名称")
     role: str = Field(..., description="Agent 角色")
     personality: str = Field(..., description="Agent 性格描述")
     avatar_type: Optional[str] = Field(default=None, description="头像类型: aiden 或 wrench，不传则随机分配")
-    provider_type: str = Field(..., description="模型提供商")
-    model_id: str = Field(..., description="模型ID")
-    model_name: str = Field(default="", description="模型显示名称")
-    api_key: str = Field(..., description="API密钥")
-    base_url: str = Field(default="", description="自定义API基础URL")
+    provider_id: str = Field(..., description="关联的 Provider ID")
 
 
 class UpdateAgentRequest(BaseModel):
-    """更新 Agent 请求"""
+    """更新 Agent 请求 - 引用 Provider"""
     name: Optional[str] = Field(default=None)
     role: Optional[str] = Field(default=None)
     personality: Optional[str] = Field(default=None)
     avatar_type: Optional[str] = Field(default=None)
-    provider_type: Optional[str] = Field(default=None)
-    model_id: Optional[str] = Field(default=None)
-    model_name: Optional[str] = Field(default=None)
-    api_key: Optional[str] = Field(default=None)
-    base_url: Optional[str] = Field(default=None)
+    provider_id: Optional[str] = Field(default=None, description="关联的 Provider ID")
     is_active: Optional[bool] = Field(default=None)
 
 
@@ -103,21 +95,35 @@ async def test_agent_connection(agent_id: str):
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
 
+    # 通过 provider_id 获取 Provider 信息
+    from providers import provider_manager
+    provider = provider_manager.get_provider(agent.provider_id)
+    if not provider:
+        raise HTTPException(status_code=400, detail=f"Provider {agent.provider_id} not found")
+
     # 导入测试连接函数
     from providers import test_model_connection
 
     success, message = await test_model_connection(
-        provider_type=agent.provider_type,
-        api_key=agent.api_key,
-        model_id=agent.model_id,
-        base_url=agent.base_url if agent.base_url else None
+        provider_type=provider.provider_type,
+        api_key=provider.api_key,
+        model_id=provider.model_id,
+        base_url=provider.base_url if provider.base_url else None
     )
 
     return TestConnectionResponse(success=success, message=message)
 
 
+class TestConnectionRequest(BaseModel):
+    """临时测试连接请求"""
+    provider_type: str = Field(..., description="提供商类型: dashscope/anthropic/openai/custom")
+    api_key: str = Field(..., description="API key")
+    model_id: str = Field(..., description="模型ID")
+    base_url: str = Field(default="", description="Base URL (可选)")
+
+
 @router.post("/test-connection")
-async def test_connection_temp(request: CreateAgentRequest):
+async def test_connection_temp(request: TestConnectionRequest):
     """临时测试连接（不保存配置）"""
     from providers import test_model_connection
 

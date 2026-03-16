@@ -26,17 +26,43 @@ export interface AgentInfo {
 
 export type AvatarType = 'aiden' | 'wrench'
 
+export interface Provider {
+  id: string
+  name: string
+  provider_type: ProviderType
+  base_url: string
+  api_key: string
+  model_id: string
+  model_name: string
+  is_active: boolean
+}
+
+export interface CreateProviderRequest {
+  name: string
+  provider_type: ProviderType
+  base_url: string
+  api_key: string
+  model_id: string
+  model_name: string
+}
+
+export interface UpdateProviderRequest {
+  name?: string
+  base_url?: string
+  api_key?: string
+  model_id?: string
+  model_name?: string
+  is_active?: boolean
+}
+
 export interface AgentConfig {
   id: string
   name: string
   role: string
   personality: string
   avatar_type: AvatarType
-  provider_type: ProviderType
-  model_id: string
-  model_name: string
-  api_key: string
-  base_url: string
+  provider_id: string
+  provider?: ProviderInfo
   created_at: string
   updated_at: string
   is_active: boolean
@@ -46,11 +72,7 @@ export interface CreateAgentRequest {
   name: string
   role: string
   personality: string
-  provider_type: ProviderType
-  model_id: string
-  model_name: string
-  api_key: string
-  base_url: string
+  provider_id: string
 }
 
 export interface UpdateAgentRequest {

@@ -3,10 +3,11 @@ import Phaser from 'phaser'
 import { ChatScene } from './game/ChatScene'
 import { ChatInput } from './components/ChatInput'
 import { AgentConfigPage } from './pages/AgentConfigPage'
+import { ProviderConfigPage } from './pages/ProviderConfigPage'
 import type { ChatMessage, RobotStatus, AgentInfo } from './types'
 import { api } from './api'
 
-type Page = 'chat' | 'agents'
+type Page = 'chat' | 'agents' | 'providers'
 
 // 流式输出消息组件
 function StreamingMessage({ content, isStreaming, onComplete }: {
@@ -57,6 +58,14 @@ const ModelIcon = () => (
     <rect x="2" y="3" width="20" height="14" rx="2" ry="2"/>
     <line x1="8" y1="21" x2="16" y2="21"/>
     <line x1="12" y1="17" x2="12" y2="21"/>
+  </svg>
+)
+
+const ProviderIcon = () => (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+    <path d="M2 17l10 5 10-5"/>
+    <path d="M2 12l10 5 10-5"/>
   </svg>
 )
 
@@ -304,6 +313,13 @@ function App() {
             <ModelIcon />
             <span>Agent 配置</span>
           </button>
+          <button
+            className={`nav-item ${currentPage === 'providers' ? 'active' : ''}`}
+            onClick={() => setCurrentPage('providers')}
+          >
+            <ProviderIcon />
+            <span>Provider 配置</span>
+          </button>
         </div>
       </nav>
 
@@ -404,6 +420,7 @@ function App() {
         )}
 
         {currentPage === 'agents' && <AgentConfigPage />}
+        {currentPage === 'providers' && <ProviderConfigPage />}
       </main>
     </div>
   )

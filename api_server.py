@@ -27,6 +27,7 @@ from agentscope.message import Msg
 from agentscope.pipeline import MsgHub
 from agents_config import agents_config_manager, AgentConfig
 from agents_api import router as agents_router
+from providers_api import router as providers_router
 
 # ============== 全局状态 ==============
 system_state = {
@@ -169,14 +170,20 @@ async def init_system():
 
     agents = []
     for config in agent_configs:
-        # 检查配置完整性
-        if not config.api_key:
-            print(f"⚠️ Agent {config.name} 未配置 API Key，跳过")
+        # 通过 provider_id 获取 Provider 配置
+        from providers import provider_manager
+        provider = provider_manager.get_provider(config.provider_id)
+        if not provider:
+            print(f"⚠️ Agent {config.name} 的 Provider {config.provider_id} 不存在，跳过")
+            continue
+
+        if not provider.api_key:
+            print(f"⚠️ Agent {config.name} 的 Provider 未配置 API Key，跳过")
             continue
 
         try:
             llm_config = config.to_llm_config()
-            print(f"🤖 创建 Agent: {config.name} ({config.role}) - 使用模型 {config.model_id}")
+            print(f"🤖 创建 Agent: {config.name} ({config.role}) - 使用模型 {provider.model_id}")
 
             agent = ChatAgent(
                 name=config.name,
@@ -224,6 +231,9 @@ app.add_middleware(
 # 添加 Agent 配置路由
 app.include_router(agents_router)
 
+# 添加 Provider 配置路由
+app.include_router(providers_router)
+
 
 # ============== API 端点 ==============
 
@@ -253,8 +263,10 @@ async def reinitialize():
         system_state["initialized"] = False
         system_state["agents"] = []
 
-        # 重新加载配置
-        print("📋 Reloading agent configs...")
+        # 重新加载 Provider 和 Agent 配置
+        print("📋 Reloading configs...")
+        from providers import provider_manager
+        provider_manager._load_config()
         agents_config_manager._load_config()
 
         await init_system()

@@ -14,19 +14,15 @@ CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "agents_c
 
 
 class AgentConfig(BaseModel):
-    """Agent 完整配置模型"""
+    """Agent 配置模型 - 引用 Provider"""
     id: str = Field(..., description="Agent 唯一标识")
     name: str = Field(..., description="Agent 名称")
     role: str = Field(..., description="Agent 角色")
     personality: str = Field(..., description="Agent 性格描述")
     avatar_type: str = Field(default="aiden", description="头像类型: aiden 或 wrench")
 
-    # 模型配置
-    provider_type: str = Field(..., description="模型提供商: dashscope, openai, anthropic, custom")
-    model_id: str = Field(..., description="模型ID")
-    model_name: str = Field(default="", description="模型显示名称")
-    api_key: str = Field(..., description="API密钥")
-    base_url: str = Field(default="", description="自定义API基础URL")
+    # 引用 Provider
+    provider_id: str = Field(..., description="关联的 Provider ID")
 
     # 元数据
     created_at: str = Field(default_factory=lambda: datetime.now().isoformat())
@@ -35,29 +31,44 @@ class AgentConfig(BaseModel):
 
     def to_info(self, mask_secret: bool = True) -> Dict[str, Any]:
         """转换为信息字典"""
+        # 获取 provider 信息
+        from providers import provider_manager
+        provider = provider_manager.get_provider(self.provider_id)
+        provider_info = None
+        if provider:
+            provider_info = {
+                "id": provider.id,
+                "name": provider.name,
+                "provider_type": provider.provider_type,
+                "model_id": provider.model_id,
+                "model_name": provider.model_name,
+            }
+
         return {
             "id": self.id,
             "name": self.name,
             "role": self.role,
             "personality": self.personality,
             "avatar_type": self.avatar_type,
-            "provider_type": self.provider_type,
-            "model_id": self.model_id,
-            "model_name": self.model_name,
-            "base_url": self.base_url,
-            "api_key": "***" if mask_secret and self.api_key else self.api_key,
+            "provider_id": self.provider_id,
+            "provider": provider_info,
             "created_at": self.created_at,
             "updated_at": self.updated_at,
             "is_active": self.is_active,
         }
 
     def to_llm_config(self) -> Dict[str, Any]:
-        """转换为 LLM 配置字典"""
+        """转换为 LLM 配置字典 - 从 Provider 获取"""
+        from providers import provider_manager
+        provider = provider_manager.get_provider(self.provider_id)
+        if not provider:
+            raise ValueError(f"Provider {self.provider_id} not found")
+
         return {
-            "provider": self.provider_type,
-            "model_id": self.model_id,
-            "api_key": self.api_key,
-            "base_url": self.base_url if self.base_url else None,
+            "provider": provider.provider_type,
+            "model_id": provider.model_id,
+            "api_key": provider.api_key,
+            "base_url": provider.base_url if provider.base_url else None,
         }
 
 
@@ -169,9 +180,8 @@ class AgentsConfigManager:
         if not agent:
             return None
 
-        # 更新字段
-        for field in ["name", "role", "personality", "avatar_type",
-                      "provider_type", "model_id", "model_name", "api_key", "base_url", "is_active"]:
+        # 更新字段 - 只包含 Agent 自身属性，模型配置通过 provider_id 引用
+        for field in ["name", "role", "personality", "avatar_type", "provider_id", "is_active"]:
             if field in data:
                 setattr(agent, field, data[field])
 
