@@ -5,7 +5,7 @@ from typing import Optional, List
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
-from agents_config import agents_config_manager, AgentConfig
+from config.agents_config import agents_config_manager, AgentConfig
 
 router = APIRouter(prefix="/api/agents-config", tags=["agents-config"])
 

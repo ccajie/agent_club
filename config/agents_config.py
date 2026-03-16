@@ -9,8 +9,11 @@ from typing import List, Optional, Dict, Any
 from pydantic import BaseModel, Field
 from datetime import datetime
 
-# 配置文件路径
-CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "agents_config.json")
+# 配置文件路径 - 放在项目根目录
+CONFIG_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "agents_config.json")
+
+# 确保 data 目录存在
+os.makedirs(os.path.dirname(CONFIG_FILE), exist_ok=True)
 
 
 class AgentConfig(BaseModel):
@@ -114,36 +117,6 @@ class AgentsConfigManager:
         """创建空配置（初始状态）"""
         self.agents = {}
         self._save_config()
-
-    # def _create_default_agents(self):
-    #     """创建默认 Agent 配置（演示用）"""
-    #     default_agents = [
-    #         AgentConfig(
-    #             id="agent_001",
-    #             name="狗哥",
-    #             role="技术专家",
-    #             personality="专业、冷静、喜欢钻研技术，说话简洁有力。擅长系统安全和网络技术。",
-    #             avatar_type="aiden",
-    #             provider_type="dashscope",
-    #             model_id="qwen-max",
-    #             model_name="通义千问 Max",
-    #             api_key="",
-    #         ),
-    #         AgentConfig(
-    #             id="agent_002",
-    #             name="扳手",
-    #             role="创意黑客",
-    #             personality="热情、幽默、充满创意，喜欢用有趣的方式解决问题。擅长硬件改造和创意方案。",
-    #             avatar_type="wrench",
-    #             provider_type="dashscope",
-    #             model_id="qwen-max",
-    #             model_name="通义千问 Max",
-    #             api_key="",
-    #         ),
-    #     ]
-    #     for agent in default_agents:
-    #         self.agents[agent.id] = agent
-    #     self._save_config()
 
     def list_agents(self, include_inactive: bool = False) -> List[AgentConfig]:
         """获取所有 Agent 配置"""

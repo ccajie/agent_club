@@ -19,15 +19,15 @@ import subprocess
 import argparse
 
 # 添加项目路径
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Agent 系统
 from agents import ChatAgent
 from agentscope.message import Msg
 from agentscope.pipeline import MsgHub
-from agents_config import agents_config_manager, AgentConfig
-from agents_api import router as agents_router
-from providers_api import router as providers_router
+from config.agents_config import agents_config_manager, AgentConfig
+from api.agents_api import router as agents_router
+from api.providers_api import router as providers_router
 
 # ============== 全局状态 ==============
 system_state = {
@@ -86,7 +86,7 @@ class AgentListResponse(BaseModel):
 
 def build_frontend():
     """构建前端静态文件"""
-    frontend_dir = os.path.join(os.path.dirname(__file__), "rpg-frontend")
+    frontend_dir = os.path.join(os.path.dirname(__file__), "..", "rpg-frontend")
     dist_dir = os.path.join(frontend_dir, "dist")
 
     # 如果已经构建过，跳过
@@ -372,7 +372,7 @@ async def health_check():
 
 def setup_static_files():
     """配置静态文件服务"""
-    dist_dir = os.path.join(os.path.dirname(__file__), "rpg-frontend", "dist")
+    dist_dir = os.path.join(os.path.dirname(__file__), "..", "rpg-frontend", "dist")
 
     if os.path.exists(dist_dir):
         app.mount("/assets", StaticFiles(directory=os.path.join(dist_dir, "assets")), name="assets")
@@ -402,7 +402,7 @@ if __name__ == "__main__":
     import uvicorn
 
     uvicorn.run(
-        "api_server:app",
+        "api.api_server:app",
         host="0.0.0.0",
         port=8000,
         reload=True,
