@@ -50,4 +50,4 @@ build/
 
 # Database and storage
 rag_relate(no_use)/qdrant_storage/
-persist_data/
+rag_relate(no_use)/persist_data/

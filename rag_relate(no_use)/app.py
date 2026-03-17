@@ -195,7 +195,7 @@ def init_system():
             if qdrant_url:
                 persist_path = None
             else:
-                persist_path = "../persist_data"
+                persist_path = "persist_data"
 
             kb = RAGKnowledgeBase(
                 embedding_model="dashscope",
@@ -205,7 +205,7 @@ def init_system():
                 qdrant_url=qdrant_url
             )
 
-            loader = DataLoader(data_dir="../data/documents")
+            loader = DataLoader(data_dir="data/documents")
             agent = SpecializedRAGAgent(
                 name="RAG_Agent",
                 knowledge_base=kb,
