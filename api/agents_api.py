@@ -11,21 +11,25 @@ router = APIRouter(prefix="/api/agents-config", tags=["agents-config"])
 
 
 class CreateAgentRequest(BaseModel):
-    """创建 Agent 请求 - 引用 Provider"""
+    """创建 Worker Agent 请求 - 引用 Provider"""
     name: str = Field(..., description="Agent 名称")
     role: str = Field(..., description="Agent 角色")
     personality: str = Field(..., description="Agent 性格描述")
     avatar_type: Optional[str] = Field(default=None, description="头像类型: aiden 或 wrench，不传则随机分配")
     provider_id: str = Field(..., description="关联的 Provider ID")
+    specialty: str = Field(default="通用任务", description="专业领域")
+    expertise: str = Field(default="", description="具体专长描述")
 
 
 class UpdateAgentRequest(BaseModel):
-    """更新 Agent 请求 - 引用 Provider"""
+    """更新 Worker Agent 请求 - 引用 Provider"""
     name: Optional[str] = Field(default=None)
     role: Optional[str] = Field(default=None)
     personality: Optional[str] = Field(default=None)
     avatar_type: Optional[str] = Field(default=None)
     provider_id: Optional[str] = Field(default=None, description="关联的 Provider ID")
+    specialty: Optional[str] = Field(default=None, description="专业领域")
+    expertise: Optional[str] = Field(default=None, description="具体专长描述")
     is_active: Optional[bool] = Field(default=None)
 
 
@@ -37,13 +41,21 @@ class TestConnectionResponse(BaseModel):
 
 @router.get("")
 async def list_agents(include_inactive: bool = False):
-    """获取所有 Agent 配置"""
+    """获取所有 Agent 配置（包含 Manager）"""
+    from config.manager_config import manager_config_manager
+
     agents = agents_config_manager.list_agents(include_inactive=include_inactive)
-    print(f"📋 API list_agents called, include_inactive={include_inactive}, found {len(agents)} agents")
-    for agent in agents:
-        print(f"   - {agent.id}: {agent.name} (is_active={agent.is_active})")
+
+    # 添加 Manager 配置作为特殊 Agent
+    manager_info = manager_config_manager.to_info()
+
+    print(f"📋 API list_agents called, include_inactive={include_inactive}, found {len(agents)} workers, manager_active={manager_info['is_active']}")
+
+    # 将 Manager 放在列表最前面
+    all_agents = [manager_info] + [agent.to_info(mask_secret=True) for agent in agents]
+
     return {
-        "agents": [agent.to_info(mask_secret=True) for agent in agents]
+        "agents": all_agents
     }
 
 

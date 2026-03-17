@@ -4,10 +4,11 @@ import { ChatScene } from './game/ChatScene'
 import { ChatInput } from './components/ChatInput'
 import { AgentConfigPage } from './pages/AgentConfigPage'
 import { ProviderConfigPage } from './pages/ProviderConfigPage'
+import { ToolConfigPage } from './pages/ToolConfigPage'
 import type { ChatMessage, RobotStatus, AgentInfo } from './types'
 import { api } from './api'
 
-type Page = 'chat' | 'agents' | 'providers'
+type Page = 'chat' | 'agents' | 'providers' | 'tools'
 
 // 流式输出消息组件
 function StreamingMessage({ content, isStreaming, onComplete }: {
@@ -66,6 +67,12 @@ const ProviderIcon = () => (
     <path d="M12 2L2 7l10 5 10-5-10-5z"/>
     <path d="M2 17l10 5 10-5"/>
     <path d="M2 12l10 5 10-5"/>
+  </svg>
+)
+
+const ToolIcon = () => (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>
   </svg>
 )
 
@@ -320,6 +327,13 @@ function App() {
             <ProviderIcon />
             <span>Provider 配置</span>
           </button>
+          <button
+            className={`nav-item ${currentPage === 'tools' ? 'active' : ''}`}
+            onClick={() => setCurrentPage('tools')}
+          >
+            <ToolIcon />
+            <span>工具管理</span>
+          </button>
         </div>
       </nav>
 
@@ -421,6 +435,7 @@ function App() {
 
         {currentPage === 'agents' && <AgentConfigPage />}
         {currentPage === 'providers' && <ProviderConfigPage />}
+        {currentPage === 'tools' && <ToolConfigPage />}
       </main>
     </div>
   )

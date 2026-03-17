@@ -22,17 +22,23 @@ import argparse
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Agent 系统
-from agents import ChatAgent
+from agents import ChatAgent, ManagerAgent, WorkerAgent
 from agentscope.message import Msg
 from agentscope.pipeline import MsgHub
 from config.agents_config import agents_config_manager, AgentConfig
+from config.manager_config import manager_config_manager
 from api.agents_api import router as agents_router
 from api.providers_api import router as providers_router
+from api.tools_api import router as tools_router
+from api.manager_api import router as manager_router
 
 # ============== 全局状态 ==============
 system_state = {
     "initialized": False,
-    "agents": [],  # Agent 实例列表
+    "agents": [],  # Agent 实例列表 (兼容模式)
+    "manager": None,  # Manager Agent 实例
+    "workers": [],  # Worker Agent 列表
+    "use_manager_mode": False,  # 是否使用Manager-Worker模式
     "msghub": None,  # MsgHub 实例
 }
 
@@ -152,25 +158,109 @@ async def lifespan(app: FastAPI):
 
 
 async def init_system():
-    """初始化多 Agent 系统 - 每个 Agent 使用独立配置"""
+    """初始化多 Agent 系统 - 支持 Manager-Worker 模式"""
     print("🚀 Initializing multi-agent system...")
 
     if system_state["initialized"]:
         print("   System already initialized, skipping...")
         return
 
-    # 获取所有启用的 Agent 配置
-    agent_configs = agents_config_manager.get_active_agents()
-    print(f"   Found {len(agent_configs)} active agent configs")
+    # 重置状态
+    system_state["agents"] = []
+    system_state["manager"] = None
+    system_state["workers"] = []
+    system_state["use_manager_mode"] = False
 
-    if not agent_configs:
-        print("⚠️ 未配置任何 Agent，请先配置")
-        system_state["initialized"] = True
-        return
+    # 获取 Manager 配置
+    manager_config = manager_config_manager.get_config()
+
+    # 获取 Worker Agent 配置
+    worker_configs = agents_config_manager.get_active_agents()
+    print(f"   Found {len(worker_configs)} active worker configs")
+    print(f"   Manager config: is_active={manager_config.is_active}, provider_id={manager_config.provider_id}")
+
+    # 如果 Manager 已启用且配置了 Provider，使用 Manager-Worker 模式
+    if manager_config.is_active and manager_config.provider_id:
+        system_state["use_manager_mode"] = True
+        await _init_manager_worker_mode(manager_config, worker_configs)
+    else:
+        # 使用传统 MsgHub 模式
+        system_state["use_manager_mode"] = False
+        await _init_msghub_mode(worker_configs)
+
+    system_state["initialized"] = True
+    print("✅ 多 Agent 系统初始化完成")
+
+
+async def _init_manager_worker_mode(manager_config: Any, worker_configs: List[AgentConfig]):
+    """初始化 Manager-Worker 模式"""
+    print("🔧 使用 Manager-Worker 协作模式")
+
+    from providers import provider_manager
+
+    # 创建 Manager
+    provider = provider_manager.get_provider(manager_config.provider_id)
+
+    if provider and provider.api_key:
+        try:
+            llm_config = manager_config.to_llm_config()
+            print(f"👔 创建 Manager: {manager_config.name}")
+
+            manager = ManagerAgent(
+                name=manager_config.name,
+                role=manager_config.role,
+                personality=manager_config.personality,
+                llm_config=llm_config,
+            )
+            system_state["manager"] = manager
+        except Exception as e:
+            print(f"⚠️ 创建 Manager {manager_config.name} 失败: {e}")
+
+    # 创建 Workers
+    workers = []
+    for config in worker_configs:
+        provider = provider_manager.get_provider(config.provider_id)
+        if not provider or not provider.api_key:
+            print(f"⚠️ Worker {config.name} 配置不完整，跳过")
+            continue
+
+        try:
+            llm_config = config.to_llm_config()
+            print(f"🛠️  创建 Worker: {config.name} ({config.specialty})")
+
+            worker = WorkerAgent(
+                name=config.name,
+                role=config.role,
+                personality=config.personality,
+                specialty=config.specialty or "通用任务",
+                expertise=config.expertise or config.role,
+                llm_config=llm_config,
+            )
+            workers.append(worker)
+        except Exception as e:
+            print(f"⚠️ 创建 Worker {config.name} 失败: {e}")
+            continue
+
+    # 注册 Workers 到 Manager
+    if system_state["manager"]:
+        for worker in workers:
+            system_state["manager"].register_worker(worker)
+
+    system_state["workers"] = workers
+
+    # 将 Manager 也放入 agents 列表用于前端显示
+    if system_state["manager"]:
+        system_state["agents"] = [system_state["manager"]] + workers
+
+    print(f"✅ Manager-Worker 模式就绪: 1 Manager, {len(workers)} Workers")
+
+
+async def _init_msghub_mode(worker_configs: List[AgentConfig]):
+    """初始化传统 MsgHub 模式"""
+    print("🔧 使用传统 MsgHub 协作模式")
 
     agents = []
-    for config in agent_configs:
-        # 通过 provider_id 获取 Provider 配置
+    for config in worker_configs:
         from providers import provider_manager
         provider = provider_manager.get_provider(config.provider_id)
         if not provider:
@@ -202,9 +292,6 @@ async def init_system():
     for agent in agents:
         print(f"   - {agent.name} ({agent.role})")
 
-    system_state["initialized"] = True
-    print("✅ 多 Agent 系统初始化完成")
-
 
 # ============== FastAPI 应用 ==============
 
@@ -234,25 +321,49 @@ app.include_router(agents_router)
 # 添加 Provider 配置路由
 app.include_router(providers_router)
 
+# 添加工具管理路由
+app.include_router(tools_router)
+
+# 添加 Manager 配置路由
+app.include_router(manager_router)
+
 
 # ============== API 端点 ==============
 
 @app.get("/api/agents", response_model=AgentListResponse)
 async def list_agents():
-    """获取所有启用的 Agent 信息"""
-    agents = agents_config_manager.get_active_agents()
-    return AgentListResponse(
-        agents=[
-            AgentInfo(
-                id=a.id,
-                name=a.name,
-                role=a.role,
-                personality=a.personality,
-                avatar_type=a.avatar_type
-            )
-            for a in agents
-        ]
-    )
+    """获取所有启用的 Agent 信息（包含 Manager）"""
+    from config.manager_config import manager_config_manager
+
+    # 获取 Worker Agents
+    worker_agents = agents_config_manager.get_active_agents()
+
+    # 获取 Manager 配置
+    manager_config = manager_config_manager.get_config()
+
+    result_agents = []
+
+    # 如果 Manager 已启用，添加到列表
+    if manager_config.is_active and manager_config.provider_id:
+        result_agents.append(AgentInfo(
+            id="manager_default",
+            name=manager_config.name,
+            role=manager_config.role,
+            personality=manager_config.personality,
+            avatar_type="manager"
+        ))
+
+    # 添加 Worker Agents
+    for a in worker_agents:
+        result_agents.append(AgentInfo(
+            id=a.id,
+            name=a.name,
+            role=a.role,
+            personality=a.personality,
+            avatar_type=a.avatar_type
+        ))
+
+    return AgentListResponse(agents=result_agents)
 
 
 @app.post("/api/system/reinitialize")
@@ -260,14 +371,20 @@ async def reinitialize():
     """重新初始化系统"""
     try:
         print("🔄 Reinitializing system...")
+        # 重置所有系统状态
         system_state["initialized"] = False
         system_state["agents"] = []
+        system_state["manager"] = None
+        system_state["workers"] = []
+        system_state["use_manager_mode"] = False
 
         # 重新加载 Provider 和 Agent 配置
         print("📋 Reloading configs...")
         from providers import provider_manager
+        from config.manager_config import manager_config_manager
         provider_manager._load_config()
         agents_config_manager._load_config()
+        manager_config_manager._load_config()
 
         await init_system()
 
@@ -286,26 +403,116 @@ async def reinitialize():
 
 @app.post("/api/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest):
-    """聊天接口 - MsgHub 多 Agent 协作"""
+    """聊天接口 - 支持 Manager-Worker 和 MsgHub 两种模式"""
     if not system_state["initialized"]:
         raise HTTPException(status_code=503, detail="系统未初始化")
 
+    try:
+        # 根据模式选择处理方式
+        if system_state["use_manager_mode"] and system_state["manager"]:
+            return await _chat_with_manager(request)
+        else:
+            return await _chat_with_msghub(request)
+
+    except Exception as e:
+        error_detail = f"对话失败: {str(e)}\n\n详细错误:\n{traceback.format_exc()}"
+        print(error_detail)
+        raise HTTPException(status_code=500, detail=error_detail)
+
+
+async def _chat_with_manager(request: ChatRequest) -> ChatResponse:
+    """使用 Manager-Worker 模式处理对话"""
+    manager = system_state["manager"]
+
+    user_msg = Msg(name="User", content=request.message, role="user")
+
+    # Manager 分析任务并分派给 Workers
+    response = await manager.reply(user_msg)
+
+    # 提取响应内容
+    content = response.content
+    if isinstance(content, list):
+        texts = []
+        for item in content:
+            if isinstance(item, dict) and "text" in item:
+                texts.append(item["text"])
+            elif isinstance(item, str):
+                texts.append(item)
+        answer = "\n".join(texts)
+    elif isinstance(content, dict):
+        answer = content.get("text", str(content))
+    else:
+        answer = str(content)
+
+    # 获取任务执行详情（如果有）
+    task_details = []
+    if manager._task_history:
+        latest_task = manager._task_history[-1]
+        if latest_task.status == "completed":
+            for step in latest_task.steps:
+                result = latest_task.results.get(step["step_id"], {})
+                if result.get("status") == "completed":
+                    task_details.append(AgentResponse(
+                        agent_name=step.get("agent_name", "Unknown"),
+                        agent_role=f"执行: {step.get('task', '')[:20]}...",
+                        content=str(result.get("result", ""))[:200]
+                    ))
+
+    responses = [
+        AgentResponse(
+            agent_name=manager.name,
+            agent_role=manager.role,
+            content=answer,
+        )
+    ]
+
+    # 添加任务执行详情
+    responses.extend(task_details)
+
+    return ChatResponse(responses=responses)
+
+
+async def _chat_with_msghub(request: ChatRequest) -> ChatResponse:
+    """使用传统 MsgHub 模式处理对话"""
     agents = system_state["agents"]
     if not agents:
         raise HTTPException(status_code=400, detail="未配置任何可用的 Agent")
 
-    try:
-        # 使用 MsgHub 让多个 Agent 协作处理消息
-        responses = []
+    responses = []
 
-        async with MsgHub(participants=agents, enable_auto_broadcast=True):
-            # 让第一个 Agent 主导对话
-            primary_agent = agents[0]
-            user_msg = Msg(name="User", content=request.message, role="user")
-            response = await primary_agent(user_msg)
+    async with MsgHub(participants=agents, enable_auto_broadcast=True):
+        # 让第一个 Agent 主导对话
+        primary_agent = agents[0]
+        user_msg = Msg(name="User", content=request.message, role="user")
+        response = await primary_agent(user_msg)
 
-            # 提取响应内容
-            content = response.content
+        # 提取响应内容
+        content = response.content
+        if isinstance(content, list):
+            texts = []
+            for item in content:
+                if isinstance(item, dict) and "text" in item:
+                    texts.append(item["text"])
+                elif isinstance(item, str):
+                    texts.append(item)
+            answer = "\n".join(texts)
+        elif isinstance(content, dict):
+            answer = content.get("text", str(content))
+        else:
+            answer = str(content)
+
+        responses.append(AgentResponse(
+            agent_name=primary_agent.name,
+            agent_role=primary_agent.role,
+            content=answer,
+        ))
+
+        # 其他 Agent 也参与对话
+        for agent in agents[1:]:
+            agent_msg = Msg(name="User", content=request.message, role="user")
+            agent_response = await agent(agent_msg)
+
+            content = agent_response.content
             if isinstance(content, list):
                 texts = []
                 for item in content:
@@ -320,42 +527,12 @@ async def chat(request: ChatRequest):
                 answer = str(content)
 
             responses.append(AgentResponse(
-                agent_name=primary_agent.name,
-                agent_role=primary_agent.role,
+                agent_name=agent.name,
+                agent_role=agent.role,
                 content=answer,
             ))
 
-            # 其他 Agent 也参与对话
-            for agent in agents[1:]:
-                agent_msg = Msg(name="User", content=request.message, role="user")
-                agent_response = await agent(agent_msg)
-
-                content = agent_response.content
-                if isinstance(content, list):
-                    texts = []
-                    for item in content:
-                        if isinstance(item, dict) and "text" in item:
-                            texts.append(item["text"])
-                        elif isinstance(item, str):
-                            texts.append(item)
-                    answer = "\n".join(texts)
-                elif isinstance(content, dict):
-                    answer = content.get("text", str(content))
-                else:
-                    answer = str(content)
-
-                responses.append(AgentResponse(
-                    agent_name=agent.name,
-                    agent_role=agent.role,
-                    content=answer,
-                ))
-
-        return ChatResponse(responses=responses)
-
-    except Exception as e:
-        error_detail = f"对话失败: {str(e)}\n\n详细错误:\n{traceback.format_exc()}"
-        print(error_detail)
-        raise HTTPException(status_code=500, detail=error_detail)
+    return ChatResponse(responses=responses)
 
 
 @app.get("/api/health")
@@ -365,6 +542,9 @@ async def health_check():
         "status": "healthy",
         "initialized": system_state["initialized"],
         "agent_count": len(system_state.get("agents", [])),
+        "mode": "manager-worker" if system_state.get("use_manager_mode") else "msghub",
+        "manager": system_state["manager"].name if system_state.get("manager") else None,
+        "worker_count": len(system_state.get("workers", [])),
     }
 
 

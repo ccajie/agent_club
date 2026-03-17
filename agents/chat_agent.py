@@ -1,6 +1,6 @@
 """
 聊天智能体 - 基于 AgentScope ReActAgent
-支持 MsgHub 多 Agent 通信
+支持 MsgHub 多 Agent 通信，集成工具调用能力
 """
 from typing import Optional, Dict, Any, List
 from agentscope.agent import AgentBase
@@ -8,6 +8,8 @@ from agentscope.message import Msg
 from agentscope.model import DashScopeChatModel, OpenAIChatModel
 from agentscope.agent import ReActAgent
 from agentscope.formatter import OpenAIChatFormatter
+
+from tools import get_toolkit
 
 
 class ChatAgent(AgentBase):
@@ -65,6 +67,9 @@ class ChatAgent(AgentBase):
         self.model = self._create_model()
         formatter = self._create_formatter()
 
+        # 获取全局 Toolkit（所有 Agent 共享）
+        toolkit = get_toolkit()
+
         # 创建 ReAct 智能体，使用角色化的 system prompt
         sys_prompt = self._create_system_prompt()
         self.react_agent = ReActAgent(
@@ -72,20 +77,28 @@ class ChatAgent(AgentBase):
             sys_prompt=sys_prompt,
             model=self.model,
             formatter=formatter,
+            toolkit=toolkit,  # 注册工具
             max_iters=10,
         )
 
     def _create_system_prompt(self) -> str:
         """创建角色化的 system prompt"""
+        from tools import list_tools
+        available_tools = list_tools()
+        tools_info = "、".join(available_tools) if available_tools else "暂无"
+
         return f"""你是{self.name}，{self.role}。
 
 你的性格特点：{self.personality}
+
+你可以使用的工具：{tools_info}
 
 请记住：
 1. 始终保持你的角色人设，用符合性格的方式说话
 2. 当其他同事（其他 Agent）发言时，你可以回应或补充
 3. 你的回答应该简洁、有趣、有互动性
 4. 不要透露你是 AI，始终保持角色扮演
+5. 需要时使用工具完成任务，但不要过度依赖
 """
 
     def _create_model(self):

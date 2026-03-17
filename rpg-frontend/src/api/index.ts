@@ -12,6 +12,9 @@ import type {
   Provider,
   CreateProviderRequest,
   UpdateProviderRequest,
+  ToolConfig,
+  ToolUpdateResponse,
+  ManagerConfig,
 } from '../types'
 
 // 自动检测环境：开发模式使用代理，生产模式使用相对路径
@@ -148,6 +151,53 @@ export const api = {
   // 重新初始化系统（在 Agent 变更后调用）
   async reinitializeSystem(): Promise<{ success: boolean; message: string; agent_count: number }> {
     const response = await client.post('/system/reinitialize')
+    return response.data
+  },
+
+  // ========== 工具管理 API ==========
+
+  // 获取所有工具列表
+  async getTools(): Promise<ToolConfig[]> {
+    const response = await client.get<{ tools: ToolConfig[] }>('/tools')
+    return response.data.tools
+  },
+
+  // 更新单个工具状态
+  async updateTool(toolName: string, enabled: boolean): Promise<ToolUpdateResponse> {
+    const response = await client.put<ToolUpdateResponse>(`/tools/${toolName}`, { enabled })
+    return response.data
+  },
+
+  // 批量更新工具状态
+  async updateToolsBatch(tools: Record<string, boolean>): Promise<ToolUpdateResponse> {
+    const response = await client.put<ToolUpdateResponse>('/tools', { tools })
+    return response.data
+  },
+
+  // ========== Manager Agent API ==========
+
+  // 获取 Manager 配置
+  async getManagerConfig(): Promise<ManagerConfig> {
+    const response = await client.get<ManagerConfig>('/manager')
+    return response.data
+  },
+
+  // 更新 Manager 配置
+  async updateManagerConfig(data: {
+    name?: string
+    role?: string
+    personality?: string
+    avatar_type?: string
+    provider_id?: string
+    is_active?: boolean
+  }): Promise<ManagerConfig> {
+    const response = await client.put<ManagerConfig>('/manager', data)
+    return response.data
+  },
+
+  // 测试 Manager 连接
+  async testManagerConnection(): Promise<TestConnectionResponse> {
+    const response = await client.post<TestConnectionResponse>('/manager/test')
     return response.data
   },
 }

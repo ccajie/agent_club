@@ -23,3 +23,6 @@ python-multipart>=0.0.6
 # 工具库
 pydantic>=2.5.0
 aiofiles>=23.2.0
+
+# 浏览器自动化工具
+playwright>=1.40.0

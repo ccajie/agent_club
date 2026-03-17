@@ -2,13 +2,30 @@
   "agents": [
     {
       "id": "agent_25ff1011",
-      "name": "rio",
-      "role": "黑客",
+      "name": "艾登皮尔斯",
+      "role": "程序员",
       "personality": "严谨",
       "avatar_type": "aiden",
+      "agent_type": "worker",
+      "specialty": "",
+      "expertise": "",
       "provider_id": "provider",
       "created_at": "2026-03-16T23:15:41.984930",
-      "updated_at": "2026-03-16T23:15:41.984935",
+      "updated_at": "2026-03-17T21:58:32.991530",
+      "is_active": true
+    },
+    {
+      "id": "agent_34a674ac",
+      "name": "杀手47",
+      "role": "冷血杀手",
+      "personality": "少言寡语",
+      "avatar_type": "wrench",
+      "agent_type": "worker",
+      "specialty": "",
+      "expertise": "",
+      "provider_id": "provider",
+      "created_at": "2026-03-16T23:58:13.436660",
+      "updated_at": "2026-03-17T21:58:35.930234",
       "is_active": true
     }
   ]

@@ -60,12 +60,15 @@ export interface AgentConfig {
   name: string
   role: string
   personality: string
-  avatar_type: AvatarType
+  avatar_type: AvatarType | string
   provider_id: string
   provider?: ProviderInfo
-  created_at: string
-  updated_at: string
+  created_at?: string
+  updated_at?: string
   is_active: boolean
+  specialty?: string
+  expertise?: string
+  agent_type?: 'manager' | 'worker'
 }
 
 export interface CreateAgentRequest {
@@ -205,4 +208,39 @@ export interface ProviderTypeInfo {
   required_fields: string[]
   optional_fields?: string[]
   supported_models?: ProviderSupportedModel[]
+}
+
+// ========== Manager Agent 类型 ==========
+
+export interface ManagerConfig {
+  id: string
+  name: string
+  role: string
+  personality: string
+  avatar_type: string
+  agent_type: 'manager'
+  provider_id: string
+  provider?: ProviderInfo
+  is_active: boolean
+}
+
+// ========== 工具管理类型 ==========
+
+export interface ToolConfig {
+  name: string
+  enabled: boolean
+  description: string
+}
+
+export interface ToolUpdateRequest {
+  enabled: boolean
+}
+
+export interface ToolsBatchUpdateRequest {
+  tools: Record<string, boolean>
+}
+
+export interface ToolUpdateResponse {
+  success: boolean
+  message: string
 }

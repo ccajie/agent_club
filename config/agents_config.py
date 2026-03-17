@@ -24,6 +24,11 @@ class AgentConfig(BaseModel):
     personality: str = Field(..., description="Agent 性格描述")
     avatar_type: str = Field(default="aiden", description="头像类型: aiden 或 wrench")
 
+    # Agent 类型和协作配置
+    agent_type: str = Field(default="worker", description="Agent 类型: manager/worker")
+    specialty: str = Field(default="", description="专业领域（Worker需要）")
+    expertise: str = Field(default="", description="具体专长描述（Worker需要）")
+
     # 引用 Provider
     provider_id: str = Field(..., description="关联的 Provider ID")
 
@@ -53,6 +58,9 @@ class AgentConfig(BaseModel):
             "role": self.role,
             "personality": self.personality,
             "avatar_type": self.avatar_type,
+            "agent_type": self.agent_type,
+            "specialty": self.specialty,
+            "expertise": self.expertise,
             "provider_id": self.provider_id,
             "provider": provider_info,
             "created_at": self.created_at,
@@ -154,7 +162,7 @@ class AgentsConfigManager:
             return None
 
         # 更新字段 - 只包含 Agent 自身属性，模型配置通过 provider_id 引用
-        for field in ["name", "role", "personality", "avatar_type", "provider_id", "is_active"]:
+        for field in ["name", "role", "personality", "avatar_type", "agent_type", "specialty", "expertise", "provider_id", "is_active"]:
             if field in data:
                 setattr(agent, field, data[field])
 
