@@ -31,14 +31,8 @@
 | 提供商 | 状态 | 备注 |
 |--------|------|------|
 | DashScope (阿里云) | ✅ 已支持 | qwen 系列 |
-| OpenAI | ✅ 已支持 | gpt 系列 |
-| Anthropic | ✅ 已支持 | claude 系列 |
-| 自定义 | ✅ 已支持 | 兼容 OpenAI API |
 
-### 📚 RAG 知识库
-- 基于 Qdrant 向量数据库
-- 支持多格式文档：PDF、Word、Excel、TXT
-- 智能文档检索与问答
+
 
 ### 🛠️ 工具系统
 - 内置工具：文件操作、浏览器自动化
@@ -215,42 +209,6 @@ python main.py
 | `/api/system/reinitialize` | POST | 重新初始化系统 |
 | `/api/health` | GET | 健康检查 |
 
-完整 API 文档见：http://localhost:8000/docs
-
----
-
-## 🛣️ 开发路线图
-
-### 已实现 ✅
-- [x] Manager-Worker 多 Agent 架构
-- [x] RPG 像素风游戏界面
-- [x] 多 LLM Provider 支持
-- [x] Agent 独立配置
-- [x] 工具系统框架
-
-### 开发中 🚧
-- [ ] RAG 知识库完整集成
-- [ ] 更多内置工具
-- [ ] Agent 记忆系统
-- [ ] 对话历史持久化
-
-### 计划中 📋
-- [ ] WebSocket 实时通信
-- [ ] 多模态支持（图片、语音）
-- [ ] Agent 协作可视化
-- [ ] 移动端适配
-
----
-
-## ⚠️ 已知问题
-
-1. **首次加载**：前端资源可能需要时间编译，首次访问请耐心等待
-2. **Agent 形象**：Worker Agent 形象由 name hash 决定，修改 name 会改变形象
-3. **浏览器兼容**：推荐使用 Chrome/Edge 最新版本
-
----
-
-## 🤝 贡献
 
 本项目处于早期开发阶段，API 和架构可能随时调整。欢迎提交 Issue 和 PR！
 
