@@ -49,5 +49,5 @@ build/
 *.egg-info/
 
 # Database and storage
-qdrant_storage/
+rag_relate(no_use)/qdrant_storage/
 persist_data/

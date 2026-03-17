@@ -13,6 +13,6 @@ ENV/
 .vscode/
 *.md
 !README.md
-qdrant_storage/
+rag_relate(no_use)/qdrant_storage/
 persist_data/
 *.log
