@@ -93,11 +93,18 @@ const ExpandIcon = () => (
 function App() {
   const gameRef = useRef<Phaser.Game | null>(null)
   const sceneRef = useRef<ChatScene | null>(null)
+  const agentsRef = useRef<AgentInfo[]>([])
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [robotStatus, setRobotStatus] = useState<RobotStatus>('idle')
   const [isProcessing, setIsProcessing] = useState(false)
   const [currentPage, setCurrentPage] = useState<Page>('chat')
   const [agents, setAgents] = useState<AgentInfo[]>([])
+  const [activeAgents, setActiveAgents] = useState<string[]>([])
+
+  // 同步agents状态到ref，确保Phaser初始化时能获取最新值
+  useEffect(() => {
+    agentsRef.current = agents
+  }, [agents])
 
   // 初始化 Phaser 游戏
   useEffect(() => {
@@ -129,8 +136,9 @@ function App() {
       if (scene) {
         sceneRef.current = scene
         console.log('ChatScene initialized, agents count:', agents.length)
-        // 传递 agents 信息（即使为空也要传递，让场景知道当前状态）
-        scene.setAgents(agents)
+        // 传递 agents 信息（使用最新的agents状态）
+        const currentAgents = agentsRef.current
+        scene.setAgents(currentAgents)
         clearInterval(checkScene)
       }
     }, 100)
@@ -194,8 +202,8 @@ function App() {
 
   // 当 agents 变化时，更新场景
   useEffect(() => {
-    if (sceneRef.current && agents.length > 0) {
-      console.log('Setting agents to scene:', agents)
+    if (sceneRef.current) {
+      console.log('Setting agents to scene:', agents.length, agents)
       sceneRef.current.setAgents(agents)
     }
   }, [agents])
@@ -213,7 +221,6 @@ function App() {
     }
     setMessages(prev => [...prev, userMessage])
     setIsProcessing(true)
-    setRobotStatus('thinking')
 
     // 在场景中显示玩家对话气泡
     sceneRef.current?.showPlayerDialog(text)
@@ -222,7 +229,19 @@ function App() {
       // 调用后端 API - 现在返回多 Agent 响应
       const responses = await api.chat(text)
 
-      // 切换到说话状态
+      // 从响应中提取实际参与的 Agent 列表
+      const participatingAgentNames = responses.map(r => r.agent_name)
+      console.log('参与对话的 Agents:', participatingAgentNames)
+
+      // 设置活跃 Agent 列表（去重）
+      const uniqueAgents = [...new Set(participatingAgentNames)]
+      setActiveAgents(uniqueAgents)
+
+      // 先让所有参与的 Agent 进入思考状态
+      setRobotStatus('thinking')
+
+      // 短暂延迟后切换到说话状态
+      await new Promise(resolve => setTimeout(resolve, 500))
       setRobotStatus('speaking')
 
       // 依次显示每个 Agent 的回复
@@ -250,6 +269,7 @@ function App() {
           setTimeout(() => {
             sceneRef.current?.resetAgentHighlight()
             setRobotStatus('idle')
+            setActiveAgents([])  // 清空活跃 Agent 列表
             setIsProcessing(false)
           }, 3000)
         } else {
@@ -281,6 +301,7 @@ function App() {
 
       // 显示错误信息并恢复状态
       setRobotStatus('idle')
+      setActiveAgents([])
       setIsProcessing(false)
     }
   }, [isProcessing])
@@ -290,20 +311,29 @@ function App() {
     setStreamingId(null)
     setStreamingContent('')
     setRobotStatus('idle')
+    setActiveAgents([])
     setIsProcessing(false)
   }, [])
 
-  // 同步机器人状态到场景
+  // 同步机器人状态到场景 - 只对活跃 Agent 生效
   useEffect(() => {
-    sceneRef.current?.setRobotStatus(robotStatus)
-  }, [robotStatus])
+    if (!sceneRef.current) return
+
+    // 重置所有 agent 为 idle
+    sceneRef.current.setRobotStatus('idle')
+
+    // 只有活跃 agent 才设置新状态
+    activeAgents.forEach(agentName => {
+      sceneRef.current?.setRobotStatus(robotStatus, agentName)
+    })
+  }, [robotStatus, activeAgents])
 
   return (
     <div className="app">
       {/* 侧边栏 */}
       <nav className="sidebar">
         <div className="sidebar-header">
-          <h2>RAG Agent</h2>
+          <h2>Agent Club</h2>
         </div>
         <div className="sidebar-nav">
           <button

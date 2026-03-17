@@ -11,7 +11,7 @@
       "expertise": "",
       "provider_id": "provider",
       "created_at": "2026-03-16T23:15:41.984930",
-      "updated_at": "2026-03-17T21:58:32.991530",
+      "updated_at": "2026-03-17T22:53:34.420278",
       "is_active": true
     },
     {
@@ -25,7 +25,7 @@
       "expertise": "",
       "provider_id": "provider",
       "created_at": "2026-03-16T23:58:13.436660",
-      "updated_at": "2026-03-17T21:58:35.930234",
+      "updated_at": "2026-03-17T22:53:37.238862",
       "is_active": true
     }
   ]
