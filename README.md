@@ -2,7 +2,7 @@
 
 > ⚠️ **早期开发阶段** | 🚧 **持续开发中** | 📝 **API 可能变动**
 
-一个基于 **RPG 像素风格** 的多 Agent 协作对话系统，支持 Manager-Worker 架构、RAG 知识库和可扩展工具系统。
+一个基于 **RPG 像素风格** 的多 Agent 协作对话系统，支持 Manager-Worker 架构
 ![img.png](img.png)
 ![img_1.png](img_1.png)
 ![Status](https://img.shields.io/badge/status-alpha-orange)
