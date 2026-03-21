@@ -13,10 +13,11 @@ from typing import List, Optional, Dict, Any
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 import subprocess
 import argparse
+import json
 
 # 添加项目路径
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -86,6 +87,16 @@ class AgentInfo(BaseModel):
 
 class AgentListResponse(BaseModel):
     agents: List[AgentInfo]
+
+
+class StreamChunk(BaseModel):
+    """流式响应数据块"""
+    type: str  # start, agent_start, chunk, done, agent_done, all_done, error
+    agent_name: Optional[str] = None
+    agent_role: Optional[str] = None
+    content: Optional[str] = None
+    index: Optional[int] = None
+    message: Optional[str] = None
 
 
 # ============== 前端构建 ==============
@@ -533,6 +544,105 @@ async def _chat_with_msghub(request: ChatRequest) -> ChatResponse:
             ))
 
     return ChatResponse(responses=responses)
+
+
+@app.post("/api/chat/stream")
+async def chat_stream(request: ChatRequest):
+    """流式聊天接口 - 使用 Server-Sent Events"""
+    if not system_state["initialized"]:
+        raise HTTPException(status_code=503, detail="系统未初始化")
+
+    async def generate_stream():
+        """生成流式响应"""
+        try:
+            if system_state["use_manager_mode"] and system_state["manager"]:
+                # Manager-Worker 模式流式输出
+                manager = system_state["manager"]
+                user_msg = Msg(name="User", content=request.message, role="user")
+
+                # 发送开始事件
+                yield f"data: {json.dumps({'type': 'start', 'agent_name': manager.name, 'agent_role': manager.role, 'index': 0})}\n\n"
+
+                # 调用 Manager（目前先模拟流式，将完整响应分段发送）
+                response = await manager.reply(user_msg)
+                content = response.content
+                if isinstance(content, list):
+                    texts = [item.get("text", "") if isinstance(item, dict) else str(item) for item in content]
+                    answer = "\n".join(texts)
+                elif isinstance(content, dict):
+                    answer = content.get("text", str(content))
+                else:
+                    answer = str(content)
+
+                # 模拟流式输出：每 10 个字符发送一次
+                chunk_size = 10
+                for i in range(0, len(answer), chunk_size):
+                    chunk = answer[i:i + chunk_size]
+                    yield f"data: {json.dumps({'type': 'chunk', 'content': chunk, 'agent_name': manager.name, 'index': 0})}\n\n"
+                    await asyncio.sleep(0.05)  # 模拟打字延迟
+
+                # 发送完成事件
+                yield f"data: {json.dumps({'type': 'done', 'agent_name': manager.name, 'index': 0})}\n\n"
+
+                # 发送全部完成事件
+                yield f"data: {json.dumps({'type': 'all_done'})}\n\n"
+
+            else:
+                # MsgHub 模式 - 支持多 Agent 流式输出
+                agents = system_state["agents"]
+                if not agents:
+                    yield f"data: {json.dumps({'type': 'error', 'message': '未配置任何可用的 Agent'})}\n\n"
+                    return
+
+                async with MsgHub(participants=agents, enable_auto_broadcast=True):
+                    for idx, agent in enumerate(agents):
+                        user_msg = Msg(name="User", content=request.message, role="user")
+
+                        # 发送 Agent 开始事件
+                        yield f"data: {json.dumps({'type': 'agent_start', 'agent_name': agent.name, 'agent_role': agent.role, 'index': idx})}\n\n"
+
+                        # 获取响应
+                        response = await agent(user_msg)
+                        content = response.content
+                        if isinstance(content, list):
+                            texts = [item.get("text", "") if isinstance(item, dict) else str(item) for item in content]
+                            answer = "\n".join(texts)
+                        elif isinstance(content, dict):
+                            answer = content.get("text", str(content))
+                        else:
+                            answer = str(content)
+
+                        # 流式输出内容
+                        chunk_size = 8
+                        for i in range(0, len(answer), chunk_size):
+                            chunk = answer[i:i + chunk_size]
+                            yield f"data: {json.dumps({'type': 'chunk', 'content': chunk, 'agent_name': agent.name, 'index': idx})}\n\n"
+                            await asyncio.sleep(0.03)
+
+                        # 发送 Agent 完成事件
+                        yield f"data: {json.dumps({'type': 'agent_done', 'agent_name': agent.name, 'index': idx})}\n\n"
+
+                        # Agent 之间的延迟
+                        if idx < len(agents) - 1:
+                            await asyncio.sleep(0.5)
+
+                # 发送全部完成事件
+                yield f"data: {json.dumps({'type': 'all_done'})}\n\n"
+
+        except Exception as e:
+            error_msg = f"流式输出错误: {str(e)}"
+            print(f"❌ {error_msg}")
+            yield f"data: {json.dumps({'type': 'error', 'message': error_msg})}\n\n"
+
+    return StreamingResponse(
+        generate_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        }
+    )
 
 
 @app.get("/api/health")

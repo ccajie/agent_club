@@ -10,43 +10,6 @@ import { api } from './api'
 
 type Page = 'chat' | 'agents' | 'providers' | 'tools'
 
-// 流式输出消息组件
-function StreamingMessage({ content, isStreaming, onComplete }: {
-  content: string
-  isStreaming: boolean
-  onComplete?: () => void
-}) {
-  const [displayText, setDisplayText] = useState('')
-  const indexRef = useRef(0)
-
-  useEffect(() => {
-    if (!isStreaming) {
-      setDisplayText(content)
-      return
-    }
-
-    indexRef.current = 0
-    setDisplayText('')
-
-    const stream = () => {
-      if (indexRef.current < content.length) {
-        setDisplayText(content.slice(0, indexRef.current + 1))
-        indexRef.current++
-
-        // 随机延迟模拟打字效果
-        const delay = Math.random() * 30 + 10
-        setTimeout(stream, delay)
-      } else {
-        onComplete?.()
-      }
-    }
-
-    stream()
-  }, [content, isStreaming])
-
-  return <span>{displayText}{isStreaming && <span className="cursor">▋</span>}</span>
-}
-
 // 图标组件
 const ChatIcon = () => (
   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -162,8 +125,6 @@ function App() {
   }, [currentPage])
 
   // 流式输出状态
-  const [streamingId, setStreamingId] = useState<string | null>(null)
-  const [streamingContent, setStreamingContent] = useState('')
   const [isChatCollapsed, setIsChatCollapsed] = useState(false)
 
   // 获取 Agent 列表
@@ -208,9 +169,11 @@ function App() {
     }
   }, [agents])
 
-  // 处理玩家消息
+  // 处理玩家消息 - 使用流式输出
   const handlePlayerMessage = useCallback(async (text: string) => {
     if (!text.trim() || isProcessing) return
+
+    console.log('🚀 开始流式请求:', text)
 
     // 添加玩家消息到列表
     const userMessage: ChatMessage = {
@@ -221,99 +184,138 @@ function App() {
     }
     setMessages(prev => [...prev, userMessage])
     setIsProcessing(true)
+    setRobotStatus('thinking')
 
     // 在场景中显示玩家对话气泡
     sceneRef.current?.showPlayerDialog(text)
 
-    try {
-      // 调用后端 API - 现在返回多 Agent 响应
-      const responses = await api.chat(text)
+    // 存储当前正在流式输出的消息
+    const streamingMessages = new Map<string, string>() // agentName -> messageId
 
-      // 从响应中提取实际参与的 Agent 列表
-      const participatingAgentNames = responses.map(r => r.agent_name)
-      console.log('参与对话的 Agents:', participatingAgentNames)
+    // 开始流式请求
+    const cancelStream = api.chatStream(
+      text,
+      (chunk) => {
+        console.log('📦 收到流式数据:', chunk.type, chunk.agent_name, chunk.content?.slice(0, 20))
 
-      // 设置活跃 Agent 列表（去重）
-      const uniqueAgents = [...new Set(participatingAgentNames)]
-      setActiveAgents(uniqueAgents)
+        switch (chunk.type) {
+          case 'start':
+          case 'agent_start':
+            // 新 Agent 开始回复 - 创建空消息
+            if (chunk.agent_name) {
+              const messageId = `msg_${Date.now()}_${chunk.index}_${Math.random().toString(36).substr(2, 9)}`
+              streamingMessages.set(chunk.agent_name, messageId)
 
-      // 先让所有参与的 Agent 进入思考状态
-      setRobotStatus('thinking')
+              // 添加活跃 Agent
+              setActiveAgents(prev => {
+                if (!prev.includes(chunk.agent_name!)) {
+                  return [...prev, chunk.agent_name!]
+                }
+                return prev
+              })
+              setRobotStatus('speaking')
 
-      // 短暂延迟后切换到说话状态
-      await new Promise(resolve => setTimeout(resolve, 500))
-      setRobotStatus('speaking')
+              // 创建新消息（空内容）
+              const newMessage: ChatMessage = {
+                id: messageId,
+                role: 'assistant',
+                content: '',
+                timestamp: Date.now(),
+                agentName: chunk.agent_name,
+                agentRole: chunk.agent_role,
+                isStreaming: true
+              }
+              setMessages(prev => [...prev, newMessage])
 
-      // 依次显示每个 Agent 的回复
-      for (let i = 0; i < responses.length; i++) {
-        const agentResponse = responses[i]
-        const messageId = (Date.now() + i + 1).toString()
+              // 高亮当前说话的 Agent
+              sceneRef.current?.highlightAgent(chunk.agent_name)
+            }
+            break
 
-        // 添加消息到列表
-        const aiMessage: ChatMessage = {
-          id: messageId,
-          role: 'assistant',
-          content: agentResponse.content,
-          timestamp: Date.now(),
-          agentName: agentResponse.agent_name,
-          agentRole: agentResponse.agent_role
-        }
-        setMessages(prev => [...prev, aiMessage])
+          case 'chunk':
+            // 接收内容片段 - 追加到对应消息
+            if (chunk.agent_name && chunk.content) {
+              const messageId = streamingMessages.get(chunk.agent_name)
+              if (messageId) {
+                setMessages(prev =>
+                  prev.map(msg =>
+                    msg.id === messageId
+                      ? { ...msg, content: msg.content + chunk.content }
+                      : msg
+                  )
+                )
+                // 更新场景中的对话气泡
+                const currentMsg = messages.find(m => m.id === messageId)
+                if (currentMsg) {
+                  sceneRef.current?.showNPCDialog(currentMsg.content + chunk.content, chunk.agent_name)
+                }
+              }
+            }
+            break
 
-        // 高亮当前说话的 Agent
-        sceneRef.current?.highlightAgent(agentResponse.agent_name)
-        sceneRef.current?.showNPCDialog(agentResponse.content, agentResponse.agent_name)
+          case 'done':
+          case 'agent_done':
+            // Agent 回复完成 - 标记为非流式
+            if (chunk.agent_name) {
+              const messageId = streamingMessages.get(chunk.agent_name)
+              if (messageId) {
+                setMessages(prev =>
+                  prev.map(msg =>
+                    msg.id === messageId
+                      ? { ...msg, isStreaming: false }
+                      : msg
+                  )
+                )
+              }
+            }
+            break
 
-        // 最后一个 Agent 回复完成后恢复状态
-        if (i === responses.length - 1) {
-          setTimeout(() => {
-            sceneRef.current?.resetAgentHighlight()
+          case 'all_done':
+            // 全部完成 - 恢复状态
+            setTimeout(() => {
+              sceneRef.current?.resetAgentHighlight()
+              setRobotStatus('idle')
+              setActiveAgents([])
+              setIsProcessing(false)
+            }, 500)
+            break
+
+          case 'error': {
+            // 错误处理
+            console.error('流式输出错误:', chunk.message)
+            const errorMsg: ChatMessage = {
+              id: (Date.now() + 1).toString(),
+              role: 'error',
+              content: chunk.message || '请求失败',
+              timestamp: Date.now(),
+              isError: true
+            }
+            setMessages(prev => [...prev, errorMsg])
             setRobotStatus('idle')
-            setActiveAgents([])  // 清空活跃 Agent 列表
+            setActiveAgents([])
             setIsProcessing(false)
-          }, 3000)
-        } else {
-          // 等待一段时间再显示下一个 Agent 的回复
-          await new Promise(resolve => setTimeout(resolve, 1500))
+            break
+          }
         }
+      },
+      (error) => {
+        // 请求失败
+        console.error('流式请求失败:', error)
+        const errorMsg: ChatMessage = {
+          id: (Date.now() + 1).toString(),
+          role: 'error',
+          content: error,
+          timestamp: Date.now(),
+          isError: true
+        }
+        setMessages(prev => [...prev, errorMsg])
+        setRobotStatus('idle')
+        setActiveAgents([])
+        setIsProcessing(false)
       }
+    )
 
-    } catch (error: any) {
-      console.error('Chat error:', error)
-
-      // 提取详细错误信息
-      let errorMessage = '抱歉，我遇到了一些问题...'
-      if (error.response?.data?.detail) {
-        errorMessage = error.response.data.detail
-      } else if (error.message) {
-        errorMessage = error.message
-      }
-
-      // 添加错误消息到列表
-      const errorMsg: ChatMessage = {
-        id: (Date.now() + 1).toString(),
-        role: 'error',
-        content: errorMessage,
-        timestamp: Date.now(),
-        isError: true
-      }
-      setMessages(prev => [...prev, errorMsg])
-
-      // 显示错误信息并恢复状态
-      setRobotStatus('idle')
-      setActiveAgents([])
-      setIsProcessing(false)
-    }
   }, [isProcessing])
-
-  // 流式输出完成回调
-  const handleStreamComplete = useCallback(() => {
-    setStreamingId(null)
-    setStreamingContent('')
-    setRobotStatus('idle')
-    setActiveAgents([])
-    setIsProcessing(false)
-  }, [])
 
   // 同步机器人状态到场景 - 只对活跃 Agent 生效
   useEffect(() => {
@@ -427,12 +429,11 @@ function App() {
                           </span>
                         </div>
                         <div className="message-text">
-                          {msg.role === 'assistant' && msg.id === streamingId ? (
-                            <StreamingMessage
-                              content={streamingContent}
-                              isStreaming={true}
-                              onComplete={handleStreamComplete}
-                            />
+                          {msg.isStreaming ? (
+                            <span>
+                              {msg.content}
+                              <span className="streaming-cursor">▋</span>
+                            </span>
                           ) : (
                             msg.content
                           )}

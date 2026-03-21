@@ -174,6 +174,69 @@ export const api = {
     return response.data
   },
 
+  // ========== 流式聊天 API ==========
+
+  chatStream(
+    message: string,
+    onChunk: (chunk: { type: string; content?: string; agent_name?: string; agent_role?: string; index?: number; message?: string }) => void,
+    onError?: (error: string) => void
+  ): () => void {
+    const controller = new AbortController()
+
+    const fetchStream = async () => {
+      try {
+        const response = await fetch('/api/chat/stream', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'text/event-stream',
+          },
+          body: JSON.stringify({ message }),
+          signal: controller.signal,
+        })
+
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`)
+        }
+
+        const reader = response.body?.getReader()
+        if (!reader) throw new Error('No response body')
+
+        const decoder = new TextDecoder()
+        let buffer = ''
+
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) break
+
+          buffer += decoder.decode(value, { stream: true })
+          const lines = buffer.split('\n')
+          buffer = lines.pop() || ''
+
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              const data = line.slice(6).trim()
+              if (data === '[DONE]') continue
+              try {
+                const parsed = JSON.parse(data)
+                onChunk(parsed)
+              } catch (e) {
+                // ignore parse errors
+              }
+            }
+          }
+        }
+      } catch (err: any) {
+        if (err.name !== 'AbortError') {
+          onError?.(err.message || '流式请求失败')
+        }
+      }
+    }
+
+    fetchStream()
+    return () => controller.abort()
+  },
+
   // ========== Manager Agent API ==========
 
   // 获取 Manager 配置
