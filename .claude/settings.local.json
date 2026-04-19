@@ -7,7 +7,8 @@
       "Bash(python3 *)",
       "Bash(npx tsc *)",
       "Bash(python *)",
-      "Bash(pip list *)"
+      "Bash(pip list *)",
+      "Bash(npx vite *)"
     ]
   }
 }

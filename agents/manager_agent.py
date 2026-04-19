@@ -479,6 +479,7 @@ class ManagerAgent(AgentBase):
         system_msg = Msg(name="system", content=system_prompt, role="system")
 
         print(f"\n   🧠 [Manager] 直接处理请求（不经过Workers）...")
+        self._emit("manager_integrating", agent_name=self.name, role=self.role)
         response = await self.model(
             messages=[system_msg.to_dict(), msg.to_dict()]
         )
