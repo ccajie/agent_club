@@ -7,7 +7,7 @@ import json
 import asyncio
 from agentscope.agent import AgentBase
 from agentscope.message import Msg
-from agentscope.model import DashScopeChatModel, OpenAIChatModel
+from agentscope.model import DashScopeChatModel, OpenAIChatModel, AnthropicChatModel
 from agentscope.formatter import OpenAIChatFormatter
 
 from tools import get_toolkit
@@ -88,6 +88,16 @@ class ManagerAgent(AgentBase):
                 model_name=self.model_name,
                 api_key=self.api_key,
                 client_kwargs={"base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1"},
+                stream=False,
+            )
+        elif self.provider == "kimicode":
+            client_kwargs = {}
+            if self.base_url:
+                client_kwargs["base_url"] = self.base_url
+            return AnthropicChatModel(
+                model_name=self.model_name,
+                api_key=self.api_key,
+                client_kwargs=client_kwargs if client_kwargs else None,
                 stream=False,
             )
         elif self.provider in ["openai", "anthropic", "custom"]:

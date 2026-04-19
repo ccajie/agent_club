@@ -185,6 +185,14 @@ async def get_provider_types():
                 "required_fields": ["api_key", "base_url", "model_id"],
                 "optional_fields": [],
             },
+            {
+                "id": "kimicode",
+                "name": "KimiCode",
+                "description": "KimiCode 编程助手，基于 Anthropic 协议",
+                "required_fields": ["api_key", "model_id"],
+                "optional_fields": ["base_url"],
+                "default_base_url": "https://api.kimi.com/coding/",
+            },
         ]
     }
 
@@ -193,7 +201,7 @@ async def get_provider_types():
 async def get_provider_models():
     """获取推荐的模型列表 - 从providers目录动态获取"""
     # 从providers目录导入模型配置
-    from providers import DashScopeProvider, AnthropicProvider
+    from providers import DashScopeProvider, AnthropicProvider, KimiCodeProvider
 
     # DashScope 模型列表
     dashscope_models = [
@@ -222,11 +230,17 @@ async def get_provider_models():
         {"id": "custom", "name": "自定义模型", "description": "输入任意模型ID"},
     ]
 
+    # KimiCode 模型列表
+    kimicode_models = [
+        {"id": "kimi-k2.5", "name": "Kimi K2.5", "description": "最强推理能力"},
+    ]
+
     return {
         "models": {
             "dashscope": dashscope_models,
             "anthropic": anthropic_models,
             "openai": openai_models,
             "custom": custom_models,
+            "kimicode": kimicode_models,
         }
     }

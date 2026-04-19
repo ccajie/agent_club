@@ -17,10 +17,10 @@ def get_provider_manager() -> ProviderManager:
 
 class CreateProviderRequest(BaseModel):
     """Request to create a provider."""
-    provider_type: ProviderType = Field(..., description="Provider type: dashscope or anthropic")
+    provider_type: ProviderType = Field(..., description="Provider type: dashscope, anthropic or kimicode")
     name: str = Field(default="", description="Display name for this provider")
     api_key: str = Field(..., description="API key")
-    base_url: str = Field(default="", description="Base URL (required for anthropic)")
+    base_url: str = Field(default="", description="Base URL (required for anthropic, optional for kimicode)")
     model_id: str = Field(..., description="Model ID for API calls")
     model_name: str = Field(default="", description="Model display name")
 
@@ -128,16 +128,16 @@ async def get_active_provider():
 
 class TestConnectionRequest(BaseModel):
     """Request to test provider connection without saving."""
-    provider_type: ProviderType = Field(..., description="Provider type: dashscope or anthropic")
+    provider_type: ProviderType = Field(..., description="Provider type: dashscope, anthropic or kimicode")
     api_key: str = Field(..., description="API key")
-    base_url: str = Field(default="", description="Base URL (required for anthropic)")
+    base_url: str = Field(default="", description="Base URL (required for anthropic, optional for kimicode)")
     model_id: str = Field(..., description="Model ID for API calls")
 
 
 @router.post("/test-connection")
 async def test_connection_temp(request: TestConnectionRequest):
     """Test connection without saving (temporary provider)."""
-    from providers import DashScopeProvider, AnthropicProvider
+    from providers import DashScopeProvider, AnthropicProvider, KimiCodeProvider
 
     try:
         if request.provider_type == ProviderType.DASHSCOPE:
@@ -150,6 +150,15 @@ async def test_connection_temp(request: TestConnectionRequest):
             )
         elif request.provider_type == ProviderType.ANTHROPIC:
             provider = AnthropicProvider(
+                id="test",
+                name="Test Provider",
+                api_key=request.api_key,
+                base_url=request.base_url,
+                model_id=request.model_id,
+                model_name="Test Model",
+            )
+        elif request.provider_type == ProviderType.KIMICODE:
+            provider = KimiCodeProvider(
                 id="test",
                 name="Test Provider",
                 api_key=request.api_key,
@@ -184,6 +193,13 @@ async def get_provider_types():
                 "description": "支持 Anthropic Claude API 协议的模型，如 KimiCode",
                 "required_fields": ["name", "api_key", "base_url", "model_id", "model_name"],
                 "optional_fields": [],
+            },
+            {
+                "id": "kimicode",
+                "name": "KimiCode",
+                "description": "KimiCode 编程助手，基于 Anthropic 协议",
+                "required_fields": ["name", "api_key", "model_id", "model_name"],
+                "optional_fields": ["base_url"],
             },
         ]
     }

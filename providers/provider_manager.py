@@ -11,6 +11,7 @@ from pydantic import BaseModel
 from .provider import Provider, ProviderInfo
 from .dashscope_provider import DashScopeProvider
 from .anthropic_provider import AnthropicProvider
+from .kimicode_provider import KimiCodeProvider
 
 
 
@@ -26,6 +27,7 @@ class ProviderType(str, Enum):
     """Provider types."""
     DASHSCOPE = "dashscope"
     ANTHROPIC = "anthropic"
+    KIMICODE = "kimicode"
 
 
 class ProviderConfig(BaseModel):
@@ -124,6 +126,16 @@ class ProviderManager:
                     model_name=config.model_name,
                     is_active=config.is_active,
                 )
+            elif config.provider_type == ProviderType.KIMICODE:
+                return KimiCodeProvider(
+                    id=config.id,
+                    name=config.name,
+                    api_key=config.api_key,
+                    base_url=config.base_url,
+                    model_id=config.model_id,
+                    model_name=config.model_name,
+                    is_active=config.is_active,
+                )
         except Exception as e:
             print(f"⚠️ Failed to create provider {config.id}: {e}")
         return None
@@ -205,6 +217,15 @@ class ProviderManager:
             )
         elif provider_type == ProviderType.ANTHROPIC:
             provider = AnthropicProvider(
+                id=provider_id,
+                name=name,
+                api_key=provider_data.get("api_key", ""),
+                base_url=provider_data.get("base_url", ""),
+                model_id=model_id,
+                model_name=model_name,
+            )
+        elif provider_type == ProviderType.KIMICODE:
+            provider = KimiCodeProvider(
                 id=provider_id,
                 name=name,
                 api_key=provider_data.get("api_key", ""),

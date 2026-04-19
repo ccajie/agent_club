@@ -5,7 +5,9 @@
       "Bash(git pull:*)",
       "Bash(git stash:*)",
       "Bash(python3 *)",
-      "Bash(npx tsc *)"
+      "Bash(npx tsc *)",
+      "Bash(python *)",
+      "Bash(pip list *)"
     ]
   }
 }

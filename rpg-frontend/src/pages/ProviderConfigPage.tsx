@@ -25,6 +25,7 @@ const defaultProviderTypes: ProviderTypeInfo[] = [
   { id: 'anthropic', name: 'Anthropic 协议', description: '支持 Anthropic Claude API 协议的模型', required_fields: ['api_key', 'base_url', 'model_id'] },
   { id: 'openai', name: 'OpenAI', description: 'OpenAI 官方 API', required_fields: ['api_key', 'model_id'], optional_fields: ['base_url'] },
   { id: 'custom', name: '自定义 OpenAI 兼容', description: '任何 OpenAI 兼容的 API 服务', required_fields: ['api_key', 'base_url', 'model_id'] },
+  { id: 'kimicode', name: 'KimiCode', description: 'KimiCode 编程助手', required_fields: ['api_key', 'model_id'], optional_fields: ['base_url'] },
 ]
 
 const defaultModels: Record<string, ProviderModel[]> = {
@@ -45,6 +46,9 @@ const defaultModels: Record<string, ProviderModel[]> = {
   ],
   custom: [
     { id: 'custom', name: '自定义模型', description: '输入任意模型ID' },
+  ],
+  kimicode: [
+    { id: 'kimi-k2.5', name: 'Kimi K2.5', description: '最强推理能力' },
   ],
 }
 
@@ -153,6 +157,11 @@ export const ProviderConfigPage = () => {
       return
     }
 
+    // For kimicode, if no base_url provided, use the default
+    if (formData.provider_type === 'kimicode' && !baseUrl) {
+      baseUrl = 'https://api.kimi.com/coding'
+    }
+
     const saveData = {
       name: formData.name,
       provider_type: formData.provider_type,
@@ -240,7 +249,8 @@ export const ProviderConfigPage = () => {
                   <span className="provider-type">
                     {provider.provider_type === 'dashscope' ? 'DashScope' :
                      provider.provider_type === 'anthropic' ? 'Anthropic' :
-                     provider.provider_type === 'openai' ? 'OpenAI' : 'Custom'}
+                     provider.provider_type === 'openai' ? 'OpenAI' :
+                     provider.provider_type === 'kimicode' ? 'KimiCode' : 'Custom'}
                   </span>
                   <span className="model-name">{provider.model_name || provider.model_id}</span>
                 </div>
@@ -382,6 +392,18 @@ export const ProviderConfigPage = () => {
                     placeholder="https://api.openai.com/v1"
                   />
                   <span className="hint">留空使用默认 OpenAI 地址</span>
+                </div>
+              )}
+              {formData.provider_type === 'kimicode' && (
+                <div className="form-group">
+                  <label>Base URL（可选）</label>
+                  <input
+                    type="text"
+                    value={formData.base_url}
+                    onChange={e => setFormData({ ...formData, base_url: e.target.value })}
+                    placeholder="https://api.kimi.com/coding"
+                  />
+                  <span className="hint">留空使用默认 KimiCode 地址 https://api.kimi.com/coding</span>
                 </div>
               )}
 

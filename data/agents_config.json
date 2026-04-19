@@ -9,13 +9,13 @@
       "agent_type": "worker",
       "specialty": "代码开发",
       "expertise": "",
-      "provider_id": "provider",
+      "provider_id": "provider-1",
       "skill_ids": [
         "coding_assistant",
         "test_pirate"
       ],
       "created_at": "2026-03-16T23:15:41.984930",
-      "updated_at": "2026-04-19T08:45:17.598216",
+      "updated_at": "2026-04-19T10:39:40.268868",
       "is_active": true
     },
     {
@@ -27,10 +27,10 @@
       "agent_type": "worker",
       "specialty": "",
       "expertise": "",
-      "provider_id": "provider",
+      "provider_id": "provider-1",
       "skill_ids": [],
       "created_at": "2026-03-16T23:58:13.436660",
-      "updated_at": "2026-03-17T23:12:03.357845",
+      "updated_at": "2026-04-19T10:39:45.968879",
       "is_active": true
     }
   ]
