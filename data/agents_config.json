@@ -2,7 +2,7 @@
   "agents": [
     {
       "id": "agent_25ff1011",
-      "name": "艾登皮尔斯",
+      "name": "妹妹",
       "role": "程序员",
       "personality": "严谨",
       "avatar_type": "aiden",
@@ -15,12 +15,12 @@
         "test_pirate"
       ],
       "created_at": "2026-03-16T23:15:41.984930",
-      "updated_at": "2026-04-19T10:39:40.268868",
+      "updated_at": "2026-04-19T17:39:40.809508",
       "is_active": true
     },
     {
       "id": "agent_34a674ac",
-      "name": "扳手",
+      "name": "姐姐",
       "role": "产品经理",
       "personality": "善于规划和写作",
       "avatar_type": "wrench",
@@ -32,7 +32,7 @@
         "writing_assistant"
       ],
       "created_at": "2026-03-16T23:58:13.436660",
-      "updated_at": "2026-04-19T11:52:08.520683",
+      "updated_at": "2026-04-19T17:39:46.919621",
       "is_active": true
     }
   ]

@@ -18,12 +18,13 @@ export class ChatScene extends Scene {
   private bounceTimers: Map<string, Phaser.Time.TimerEvent> = new Map()
   private agents: AgentInfo[] = []
 
-  private readonly NPC_SCALE = 1.8
+  private readonly NPC_SCALE = 1.35
   private readonly MAX_AGENTS = 10
   private readonly MAP_WIDTH = 720
   private readonly MAP_HEIGHT = 480
   private sceneScale = 1
   private mapLayers: Phaser.Tilemaps.TilemapLayer[] = []
+  private collisionRects: Array<{ x: number; y: number; width: number; height: number }> = []
 
   constructor() {
     super({ key: 'ChatScene' })
@@ -69,10 +70,10 @@ export class ChatScene extends Scene {
     // 瓦片图片（被内嵌 tileset 引用）
     this.load.image('libmap', '/assets/maps/libmap.png')
 
-    // 外部角色图（可选，不存在则回退代码生成）
-    this.load.image('manager', '/assets/characters/manager.png')
-    this.load.image('worker_1', '/assets/characters/worker_1.png')
-    this.load.image('worker_2', '/assets/characters/worker_2.png')
+    // 帧动画精灵图：4行(下/左/右/上) × N列，单帧 64×128
+    // idle: 512×512 → 4行 × 8列；walk: 640×512 → 4行 × 10列
+    this.load.spritesheet('worker1_idle', '/assets/characters/worker1_idle.png', { frameWidth: 64, frameHeight: 128 })
+    this.load.spritesheet('worker1_walk', '/assets/characters/worker1_walking.png', { frameWidth: 64, frameHeight: 128 })
 
     // 代码生成纹理回退（角色 + 气泡）
     this.createPixelTexturesFallback()
@@ -81,6 +82,9 @@ export class ChatScene extends Scene {
   create() {
     // 创建 Tiled 地图
     this.createTilemap()
+
+    // 创建角色帧动画
+    this.createAnimations()
 
     // 创建 NPC
     if (this.agents.length > 0) {
@@ -138,8 +142,132 @@ export class ChatScene extends Scene {
 
     const collisionLayer = map.getObjectLayer('collisions')
     if (collisionLayer) {
-      console.log(`Loaded collision layer with ${collisionLayer.objects.length} objects`)
+      this.collisionRects = collisionLayer.objects.map(obj => ({
+        x: obj.x ?? 0,
+        y: obj.y ?? 0,
+        width: obj.width ?? 0,
+        height: obj.height ?? 0,
+      }))
+      console.log(`Loaded collision layer with ${this.collisionRects.length} objects`)
+    } else {
+      this.collisionRects = []
     }
+  }
+
+  // ========== 帧动画 ==========
+
+  private createAnimations() {
+    // 为每个 spritesheet 创建 idle/thinking/speaking 动画
+    // 只使用第0行（朝下方向）的帧，避免切到其他方向
+    const sheets: { key: string; cols: number }[] = [
+      { key: 'worker1_idle', cols: 8 },   // 512/64 = 8列
+      { key: 'worker1_walk', cols: 10 },  // 640/64 = 10列
+    ]
+
+    for (const { key, cols } of sheets) {
+      if (!this.textures.exists(key)) continue
+
+      // 只取第0行（朝下方向）的帧：索引 0 到 cols-1
+      const frames = this.anims.generateFrameNumbers(key, { start: 0, end: cols - 1 })
+      if (!frames || frames.length === 0) continue
+
+      const prefix = key
+      this.anims.create({
+        key: `${prefix}_idle`,
+        frames: frames,
+        frameRate: 6,
+        repeat: -1,
+      })
+      this.anims.create({
+        key: `${prefix}_thinking`,
+        frames: frames,
+        frameRate: 6,
+        repeat: -1,
+      })
+      this.anims.create({
+        key: `${prefix}_speaking`,
+        frames: frames,
+        frameRate: 8,
+        repeat: -1,
+      })
+    }
+  }
+
+  private getAnimKey(textureKey: string, state: string): string | null {
+    const key = `${textureKey}_${state}`
+    return this.anims.exists(key) ? key : null
+  }
+
+  private playAgentAnim(agentName: string, state: string) {
+    const npc = this.npcs.get(agentName)
+    if (!npc) return
+    const body = npc.getAt(1) as Phaser.GameObjects.Sprite
+    const animKey = this.getAnimKey(body.texture.key, state)
+    if (animKey && body.anims.currentAnim?.key !== animKey) {
+      body.play(animKey)
+    }
+  }
+
+  private hasFrameAnim(textureKey: string): boolean {
+    return this.anims.exists(`${textureKey}_idle`)
+  }
+
+  // ========== 碰撞检测 ==========
+
+  private isFootprintColliding(mapX: number, mapY: number): boolean {
+    // NPC 底部 footprint（地图坐标）：宽 30，高 15，中心在 (mapX, mapY)
+    const footX = mapX - 15
+    const footY = mapY - 12
+    const footW = 30
+    const footH = 12
+    return this.collisionRects.some(r =>
+      footX < r.x + r.width && footX + footW > r.x &&
+      footY < r.y + r.height && footY + footH > r.y
+    )
+  }
+
+  private findSafePos(mapX: number, mapY: number): { x: number; y: number } {
+    if (!this.isFootprintColliding(mapX, mapY)) return { x: mapX, y: mapY }
+
+    // 螺旋搜索：先左右，再上下，步长 10 像素
+    for (let radius = 10; radius < 400; radius += 10) {
+      // 右
+      if (!this.isFootprintColliding(mapX + radius, mapY)) return { x: mapX + radius, y: mapY }
+      // 左
+      if (!this.isFootprintColliding(mapX - radius, mapY)) return { x: mapX - radius, y: mapY }
+      // 上
+      if (!this.isFootprintColliding(mapX, mapY - radius)) return { x: mapX, y: mapY - radius }
+      // 下
+      if (!this.isFootprintColliding(mapX, mapY + radius)) return { x: mapX, y: mapY + radius }
+      // 四个对角
+      if (!this.isFootprintColliding(mapX + radius, mapY - radius)) return { x: mapX + radius, y: mapY - radius }
+      if (!this.isFootprintColliding(mapX - radius, mapY - radius)) return { x: mapX - radius, y: mapY - radius }
+      if (!this.isFootprintColliding(mapX + radius, mapY + radius)) return { x: mapX + radius, y: mapY + radius }
+      if (!this.isFootprintColliding(mapX - radius, mapY + radius)) return { x: mapX - radius, y: mapY + radius }
+    }
+    return { x: mapX, y: mapY }
+  }
+
+  private findSafeRandomPos(): { x: number; y: number } {
+    // 中间区域随机生成，避免贴边
+    const marginX = 120
+    const marginY = 100
+    const minX = marginX
+    const maxX = this.MAP_WIDTH - marginX
+    const minY = marginY
+    const maxY = this.MAP_HEIGHT - marginY
+
+    // 先随机尝试 30 次
+    for (let i = 0; i < 30; i++) {
+      const mapX = minX + Math.random() * (maxX - minX)
+      const mapY = minY + Math.random() * (maxY - minY)
+      if (!this.isFootprintColliding(mapX, mapY)) {
+        return { x: mapX, y: mapY }
+      }
+    }
+
+    // fallback：从中心螺旋搜索
+    return this.findSafePos(this.MAP_WIDTH / 2, this.MAP_HEIGHT / 2)
   }
 
   // ========== NPC ==========
@@ -148,19 +276,17 @@ export class ChatScene extends Scene {
     const count = this.agents.length
     if (count === 0) return
 
-    const margin = 60
-    const usableWidth = this.MAP_WIDTH - margin * 2
-    const spacing = count > 1 ? usableWidth / (count - 1) : 0
-    const startX = margin
-
     const scaledW = this.MAP_WIDTH * this.sceneScale
     const scaledH = this.MAP_HEIGHT * this.sceneScale
     const offsetX = (this.cameras.main.width - scaledW) / 2
     const offsetY = (this.cameras.main.height - scaledH) / 2
 
     this.agents.forEach((agent, index) => {
-      const mapX = count === 1 ? this.MAP_WIDTH / 2 : startX + index * spacing
-      const mapY = this.MAP_HEIGHT - 60
+      // 中间区域随机生成安全位置
+      const safe = this.findSafeRandomPos()
+      const mapX = safe.x
+      const mapY = safe.y
+
       const x = offsetX + mapX * this.sceneScale
       const y = offsetY + mapY * this.sceneScale
 
@@ -173,12 +299,10 @@ export class ChatScene extends Scene {
 
   private resolveAgentTexture(name: string, isManager: boolean): string {
     if (isManager) {
-      return this.textures.exists('manager') ? 'manager' : MANAGER_CONFIG.texture
+      return MANAGER_CONFIG.texture
     }
-    const hash = this.getAgentTextureByName(name)
-    if (hash === 'aiden' && this.textures.exists('worker_1')) return 'worker_1'
-    if (hash === 'wrench' && this.textures.exists('worker_2')) return 'worker_2'
-    return hash
+    if (this.textures.exists('worker1_idle')) return 'worker1_idle'
+    return this.getAgentTextureByName(name)
   }
 
   private createSingleNPC(name: string, x: number, y: number, textureKey: string, index: number) {
@@ -187,6 +311,12 @@ export class ChatScene extends Scene {
     const body = this.add.sprite(0, 0, textureKey)
       .setOrigin(0.5, 0.5)
       .setScale(this.NPC_SCALE)
+
+    // 如果有帧动画，立即播放 idle
+    if (this.hasFrameAnim(textureKey)) {
+      const animKey = this.getAnimKey(textureKey, 'idle')
+      if (animKey) body.play(animKey)
+    }
 
     const shadow = this.add.ellipse(0, 58, 44, 14, 0x000000, 0.25)
 
@@ -201,7 +331,10 @@ export class ChatScene extends Scene {
     npc.setDepth(100)
     this.npcs.set(name, npc)
 
-    this.startIdleAnimation(name, index * 200)
+    // 无帧动画时才用 tween 做 idle 浮动
+    if (!this.hasFrameAnim(textureKey)) {
+      this.startIdleAnimation(name, index * 200)
+    }
   }
 
   private recreateNPCs() {
@@ -250,35 +383,51 @@ export class ChatScene extends Scene {
       this.bounceTimers.delete(agentName)
     }
 
+    // 检查是否有帧动画
+    const body = npc.getAt(1) as Phaser.GameObjects.Sprite
+    const hasAnim = this.hasFrameAnim(body.texture.key)
+
     switch (status) {
       case 'idle':
-        this.startIdleAnimation(agentName)
+        if (hasAnim) {
+          this.playAgentAnim(agentName, 'idle')
+        } else {
+          this.startIdleAnimation(agentName)
+        }
         this.hideSpeechBubble(agentName)
         break
       case 'thinking':
-        this.tweens.add({
-          targets: npc,
-          angle: { from: -5, to: 5 },
-          duration: 300,
-          yoyo: true,
-          repeat: -1,
-          ease: 'Sine.easeInOut'
-        })
+        if (hasAnim) {
+          this.playAgentAnim(agentName, 'thinking')
+        } else {
+          this.tweens.add({
+            targets: npc,
+            angle: { from: -5, to: 5 },
+            duration: 300,
+            yoyo: true,
+            repeat: -1,
+            ease: 'Sine.easeInOut'
+          })
+        }
         this.showSpeechBubble('思考中...', agentName)
         break
       case 'speaking':
-        this.bounceTimers.set(agentName, this.time.addEvent({
-          delay: 200,
-          callback: () => {
-            this.tweens.add({
-              targets: npc,
-              scaleY: 0.9,
-              duration: 100,
-              yoyo: true
-            })
-          },
-          repeat: -1
-        }))
+        if (hasAnim) {
+          this.playAgentAnim(agentName, 'speaking')
+        } else {
+          this.bounceTimers.set(agentName, this.time.addEvent({
+            delay: 200,
+            callback: () => {
+              this.tweens.add({
+                targets: npc,
+                scaleY: 0.9,
+                duration: 100,
+                yoyo: true
+              })
+            },
+            repeat: -1
+          }))
+        }
         this.showSpeechBubble('💬', agentName)
         break
     }
