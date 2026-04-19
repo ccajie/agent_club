@@ -198,6 +198,7 @@ function App() {
 
     // 存储当前正在流式输出的消息
     const streamingMessages = new Map<string, string>() // agentName -> messageId
+    const streamingContents = new Map<string, string>() // agentName -> accumulated content
 
     // 开始流式请求
     const cancelStream = api.chatStream(
@@ -212,6 +213,7 @@ function App() {
             if (chunk.agent_name) {
               const messageId = `msg_${Date.now()}_${chunk.index}_${Math.random().toString(36).substr(2, 9)}`
               streamingMessages.set(chunk.agent_name, messageId)
+              streamingContents.set(chunk.agent_name, '')
 
               // 添加活跃 Agent
               setActiveAgents(prev => {
@@ -244,6 +246,11 @@ function App() {
             if (chunk.agent_name && chunk.content) {
               const messageId = streamingMessages.get(chunk.agent_name)
               if (messageId) {
+                // 累计内容
+                const prevContent = streamingContents.get(chunk.agent_name) || ''
+                const newContent = prevContent + chunk.content
+                streamingContents.set(chunk.agent_name, newContent)
+
                 setMessages(prev =>
                   prev.map(msg =>
                     msg.id === messageId
@@ -251,11 +258,8 @@ function App() {
                       : msg
                   )
                 )
-                // 更新场景中的对话气泡
-                const currentMsg = messages.find(m => m.id === messageId)
-                if (currentMsg) {
-                  sceneRef.current?.showNPCDialog(currentMsg.content + chunk.content, chunk.agent_name)
-                }
+                // 更新场景中的对话气泡（用累计后的完整内容）
+                sceneRef.current?.showNPCDialog(newContent, chunk.agent_name)
               }
             }
             break

@@ -16,6 +16,7 @@ export class ChatScene extends Scene {
   private speechBubbles: Map<string, Phaser.GameObjects.Container> = new Map()
   private robotStatuses: Map<string, RobotStatus> = new Map()
   private bounceTimers: Map<string, Phaser.Time.TimerEvent> = new Map()
+  private speechTimers: Map<string, Phaser.Time.TimerEvent> = new Map()
   private agents: AgentInfo[] = []
 
   private readonly NPC_SCALE = 1.35
@@ -42,6 +43,8 @@ export class ChatScene extends Scene {
   shutdown() {
     this.bounceTimers.forEach(timer => timer.remove())
     this.bounceTimers.clear()
+    this.speechTimers.forEach(timer => timer.remove())
+    this.speechTimers.clear()
   }
 
   setRobotStatus(status: RobotStatus, agentName?: string) {
@@ -345,6 +348,8 @@ export class ChatScene extends Scene {
     this.tweens.killAll()
     this.bounceTimers.forEach(timer => timer.remove())
     this.bounceTimers.clear()
+    this.speechTimers.forEach(timer => timer.remove())
+    this.speechTimers.clear()
 
     this.createTilemap()
 
@@ -394,7 +399,7 @@ export class ChatScene extends Scene {
         } else {
           this.startIdleAnimation(agentName)
         }
-        this.hideSpeechBubble(agentName)
+        // 气泡不由状态切换控制，由 showNPCDialog 的 30 秒定时器管理
         break
       case 'thinking':
         if (hasAnim) {
@@ -409,7 +414,6 @@ export class ChatScene extends Scene {
             ease: 'Sine.easeInOut'
           })
         }
-        this.showSpeechBubble('思考中...', agentName)
         break
       case 'speaking':
         if (hasAnim) {
@@ -428,7 +432,6 @@ export class ChatScene extends Scene {
             repeat: -1
           }))
         }
-        this.showSpeechBubble('💬', agentName)
         break
     }
   }
@@ -452,16 +455,17 @@ export class ChatScene extends Scene {
 
   private createSpeechBubbles() {
     this.npcs.forEach((npc, name) => {
-      const bubble = this.add.container(npc.x, npc.y - 60)
+      const bubble = this.add.container(npc.x, npc.y - 125)
       bubble.setVisible(false)
       bubble.setScale(0)
 
       const bg = this.add.image(0, 0, 'speechBubble').setOrigin(0.5)
-      const text = this.add.text(0, -5, '...', {
+      const text = this.add.text(0, 0, '...', {
         fontFamily: '"Noto Sans SC", sans-serif',
-        fontSize: '12px',
+        fontSize: '11px',
         color: '#2d3436',
-        align: 'center'
+        align: 'left',
+        lineSpacing: 0,
       }).setOrigin(0.5)
 
       bubble.add([bg, text])
@@ -479,7 +483,19 @@ export class ChatScene extends Scene {
       if (!bubble) return
       const textObj = bubble.getData('text') as Phaser.GameObjects.Text
       textObj.setText(text)
+
+      // 取消气泡上任何正在运行的 tween（防止旧的 hide 动画把气泡缩没）
+      this.tweens.killTweensOf(bubble)
+
+      if (bubble.visible) {
+        // 已经在显示（或正在入场/退场中），只更新文本并确保缩放到正常大小
+        bubble.setScale(1)
+        return
+      }
+
+      // 首次显示，播放入场动画
       bubble.setVisible(true)
+      bubble.setScale(0)
       this.tweens.add({
         targets: bubble,
         scale: { from: 0, to: 1 },
@@ -495,7 +511,9 @@ export class ChatScene extends Scene {
       : Array.from(this.speechBubbles.values())
 
     targetBubbles.forEach(bubble => {
-      if (!bubble) return
+      if (!bubble || !bubble.visible) return
+      // 取消可能正在运行的入场/更新 tween，避免冲突
+      this.tweens.killTweensOf(bubble)
       this.tweens.add({
         targets: bubble,
         scale: 0,
@@ -521,12 +539,40 @@ export class ChatScene extends Scene {
     })
   }
 
-  showNPCDialog(_text: string, agentName?: string, onComplete?: () => void) {
-    this.showSpeechBubble('💬', agentName)
-    this.time.delayedCall(3000, () => {
+  private wrapTextByChars(text: string, maxChars: number): string {
+    const lines: string[] = []
+    for (let i = 0; i < text.length; i += maxChars) {
+      lines.push(text.slice(i, i + maxChars))
+    }
+    return lines.join('\n')
+  }
+
+  showNPCDialog(text: string, agentName?: string, onComplete?: () => void) {
+    const MAX_LEN = 50
+    const CHARS_PER_LINE = 18
+    // 去掉换行，紧凑成纯文本
+    const compact = text.replace(/\r?\n/g, '')
+    const truncated = compact.length > MAX_LEN ? compact.slice(0, MAX_LEN) + '...' : compact
+    const displayText = this.wrapTextByChars(truncated, CHARS_PER_LINE)
+
+    // 清除该角色之前的隐藏定时器
+    const oldTimer = agentName ? this.speechTimers.get(agentName) : null
+    if (oldTimer) {
+      oldTimer.remove()
+      this.speechTimers.delete(agentName!)
+    }
+
+    this.showSpeechBubble(displayText, agentName)
+
+    const timer = this.time.delayedCall(30000, () => {
       this.hideSpeechBubble(agentName)
+      if (agentName) this.speechTimers.delete(agentName)
       onComplete?.()
     })
+
+    if (agentName) {
+      this.speechTimers.set(agentName, timer)
+    }
   }
 
   highlightAgent(agentName: string) {
@@ -562,24 +608,32 @@ export class ChatScene extends Scene {
     this.createManagerTexture()
 
     const bubbleGraphics = this.make.graphics({ x: 0, y: 0 })
+    const BW = 260
+    const BH = 90
+    const arrowH = 14
+    const padY = 14
+    const totalH = BH + arrowH + padY
+    const tipX = BW / 2
+    const tipY = padY + BH
+    // 圆角矩形在纹理中垂直居中，中心与纹理中心对齐
     bubbleGraphics.fillStyle(0xffffff)
-    bubbleGraphics.fillRoundedRect(0, 0, 80, 40, 8)
+    bubbleGraphics.fillRoundedRect(0, padY, BW, BH, 12)
     bubbleGraphics.lineStyle(2, 0x2d3436)
-    bubbleGraphics.strokeRoundedRect(0, 0, 80, 40, 8)
+    bubbleGraphics.strokeRoundedRect(0, padY, BW, BH, 12)
     bubbleGraphics.fillStyle(0xffffff)
     bubbleGraphics.beginPath()
-    bubbleGraphics.moveTo(30, 40)
-    bubbleGraphics.lineTo(40, 50)
-    bubbleGraphics.lineTo(50, 40)
+    bubbleGraphics.moveTo(tipX - 10, tipY)
+    bubbleGraphics.lineTo(tipX, tipY + arrowH)
+    bubbleGraphics.lineTo(tipX + 10, tipY)
     bubbleGraphics.closePath()
     bubbleGraphics.fillPath()
     bubbleGraphics.lineStyle(2, 0x2d3436)
     bubbleGraphics.beginPath()
-    bubbleGraphics.moveTo(30, 40)
-    bubbleGraphics.lineTo(40, 50)
-    bubbleGraphics.lineTo(50, 40)
+    bubbleGraphics.moveTo(tipX - 10, tipY)
+    bubbleGraphics.lineTo(tipX, tipY + arrowH)
+    bubbleGraphics.lineTo(tipX + 10, tipY)
     bubbleGraphics.strokePath()
-    bubbleGraphics.generateTexture('speechBubble', 80, 55)
+    bubbleGraphics.generateTexture('speechBubble', BW, totalH)
   }
 
   private getAgentTextureByName(name: string): string {
