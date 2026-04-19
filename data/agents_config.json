@@ -22,15 +22,17 @@
       "id": "agent_34a674ac",
       "name": "扳手",
       "role": "产品经理",
-      "personality": "外向开朗，点子多",
+      "personality": "善于规划和写作",
       "avatar_type": "wrench",
       "agent_type": "worker",
       "specialty": "",
       "expertise": "",
       "provider_id": "provider-1",
-      "skill_ids": [],
+      "skill_ids": [
+        "writing_assistant"
+      ],
       "created_at": "2026-03-16T23:58:13.436660",
-      "updated_at": "2026-04-19T10:39:45.968879",
+      "updated_at": "2026-04-19T11:52:08.520683",
       "is_active": true
     }
   ]

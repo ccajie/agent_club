@@ -110,7 +110,9 @@ class ChatAgent(AgentBase):
 """
 
         if skills_prompt:
+            print(f"   📎 [{self.name}] 注入 skills: {self.skill_names}")
             return base_prompt + "\n\n" + skills_prompt
+        print(f"   📎 [{self.name}] 无 skills 注入")
         return base_prompt
 
     def _create_model(self):

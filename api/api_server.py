@@ -240,7 +240,7 @@ async def _init_manager_worker_mode(manager_config: Any, worker_configs: List[Ag
 
         try:
             llm_config = config.to_llm_config()
-            print(f"🛠️  创建 Worker: {config.name} ({config.specialty})")
+            print(f"🛠️  创建 Worker: {config.name} ({config.specialty}), skills={config.skill_ids}")
 
             worker = WorkerAgent(
                 name=config.name,
@@ -564,36 +564,85 @@ async def chat_stream(request: ChatRequest):
         """生成流式响应"""
         try:
             if system_state["use_manager_mode"] and system_state["manager"]:
-                # Manager-Worker 模式流式输出
+                # Manager-Worker 模式流式输出 - 展示中间过程
                 manager = system_state["manager"]
                 user_msg = Msg(name="User", content=request.message, role="user")
 
-                # 发送开始事件
-                yield f"data: {json.dumps({'type': 'start', 'agent_name': manager.name, 'agent_role': manager.role, 'index': 0})}\n\n"
+                event_queue = asyncio.Queue()
 
-                # 调用 Manager（目前先模拟流式，将完整响应分段发送）
-                response = await manager.reply(user_msg)
-                content = response.content
-                if isinstance(content, list):
-                    texts = [item.get("text", "") if isinstance(item, dict) else str(item) for item in content]
-                    answer = "\n".join(texts)
-                elif isinstance(content, dict):
-                    answer = content.get("text", str(content))
-                else:
-                    answer = str(content)
+                def on_manager_event(event):
+                    event_queue.put_nowait(("event", event))
 
-                # 模拟流式输出：每 10 个字符发送一次
-                chunk_size = 10
-                for i in range(0, len(answer), chunk_size):
-                    chunk = answer[i:i + chunk_size]
-                    yield f"data: {json.dumps({'type': 'chunk', 'content': chunk, 'agent_name': manager.name, 'index': 0})}\n\n"
-                    await asyncio.sleep(0.05)  # 模拟打字延迟
+                # 临时设置事件回调
+                manager._event_callback = on_manager_event
 
-                # 发送完成事件
-                yield f"data: {json.dumps({'type': 'done', 'agent_name': manager.name, 'index': 0})}\n\n"
+                async def run_manager():
+                    """后台运行 Manager 任务"""
+                    try:
+                        response = await manager.reply(user_msg)
+                        # 提取文本内容
+                        content = response.content
+                        if isinstance(content, list):
+                            texts = [item.get("text", "") if isinstance(item, dict) else str(item) for item in content]
+                            answer = "\n".join(texts)
+                        elif isinstance(content, dict):
+                            answer = content.get("text", str(content))
+                        else:
+                            answer = str(content)
+                        await event_queue.put(("final", answer))
+                    except Exception as e:
+                        await event_queue.put(("error", str(e)))
+                    finally:
+                        await event_queue.put(("done", None))
 
-                # 发送全部完成事件
-                yield f"data: {json.dumps({'type': 'all_done'})}\n\n"
+                # 启动后台任务
+                asyncio.create_task(run_manager())
+
+                # 主循环：从队列取事件并 yield
+                final_answer = ""
+                while True:
+                    kind, data = await event_queue.get()
+
+                    if kind == "done":
+                        break
+
+                    elif kind == "event":
+                        event_type = data.get("type")
+
+                        if event_type == "worker_start":
+                            agent_name = data.get("agent_name", "Worker")
+                            task_desc = data.get("task", "")
+                            yield f"data: {json.dumps({'type': 'agent_start', 'agent_name': agent_name, 'agent_role': task_desc[:40], 'index': 1})}\n\n"
+
+                        elif event_type == "worker_done":
+                            agent_name = data.get("agent_name", "Worker")
+                            result = data.get("result", "")
+                            if result:
+                                yield f"data: {json.dumps({'type': 'chunk', 'content': result, 'agent_name': agent_name, 'index': 1})}\n\n"
+                            yield f"data: {json.dumps({'type': 'agent_done', 'agent_name': agent_name, 'index': 1})}\n\n"
+                            await asyncio.sleep(0.2)
+
+                        elif event_type == "manager_integrating":
+                            # Manager 开始整合，发送开始事件
+                            yield f"data: {json.dumps({'type': 'start', 'agent_name': manager.name, 'agent_role': manager.role, 'index': 0})}\n\n"
+
+                    elif kind == "final":
+                        final_answer = data
+                        # 模拟流式输出最终答案
+                        chunk_size = 10
+                        for i in range(0, len(final_answer), chunk_size):
+                            chunk = final_answer[i:i + chunk_size]
+                            yield f"data: {json.dumps({'type': 'chunk', 'content': chunk, 'agent_name': manager.name, 'index': 0})}\n\n"
+                            await asyncio.sleep(0.05)
+
+                        yield f"data: {json.dumps({'type': 'done', 'agent_name': manager.name, 'index': 0})}\n\n"
+                        yield f"data: {json.dumps({'type': 'all_done'})}\n\n"
+
+                    elif kind == "error":
+                        yield f"data: {json.dumps({'type': 'error', 'message': data})}\n\n"
+
+                # 清除回调
+                manager._event_callback = None
 
             else:
                 # MsgHub 模式 - 支持多 Agent 流式输出
