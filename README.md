@@ -3,24 +3,24 @@
 > ⚠️ **早期开发阶段** | 🚧 **持续开发中** | 📝 **API 可能变动**
 
 一个基于 **RPG 像素风格** 的多 Agent 协作对话系统，支持 Manager-Worker 架构
-![img.png](img.png)
-![img_1.png](img_1.png)
+
 ![Status](https://img.shields.io/badge/status-alpha-orange)
 ![Python](https://img.shields.io/badge/python-3.10+-blue)
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.104+-green)
 ![React](https://img.shields.io/badge/React-18+-61dafb)
 
+![img_2.png](img_2.png)
+![img_3.png](img_3.png)
 ---
 
 ## ✨ 核心特性
 
 ### 🎮 RPG 像素风界面
 - **2D 游戏场景**：基于 Phaser.js 的星露谷物语风格办公室场景
-- **Agent 形象**：
-  - Manager：资本家形象（黑色礼帽 + 礼服）
-  - Worker：看门狗风格（艾登/扳手形象随机分配）
-- **动画状态**：待机 / 思考 / 说话 三种状态动画
+- **Agent 形象**：Manager 与 Worker 均使用帧动画精灵图（四方向行走/待机动画）
+- **动画状态**：待机 / 行走 / 思考 / 说话
 - **对话气泡**：游戏风格的对话展示
+- **点击移动**：选中角色后点击地图空地可移动，自动避障
 
 ### 🧠 多 Agent 架构
 - **Manager-Worker 模式**：智能任务分派与结果整合
@@ -31,10 +31,18 @@
 | 提供商 | 状态 | 备注 |
 |--------|------|------|
 | DashScope (阿里云) | ✅ 已支持 | qwen 系列 |
+| OpenAI | ✅ 已支持 | GPT 系列 |
+| Anthropic | ✅ 已支持 | Claude 系列 |
+| Kimi (Moonshot) | ✅ 已支持 | kimi 系列 |
+| 自定义 Provider | ✅ 已支持 | 任意兼容 OpenAI API 的服务 |
 
+### 🛠️ 技能系统
+- **内置技能**：文件操作、浏览器自动化
+- **技能管理**：通过 Skill 面板启用/禁用技能
+- **可扩展**：支持自定义技能注册，自动加载 `agents/skills/` 目录下的技能文件
+- **技能绑定**：每个 Agent 可独立配置启用的技能列表
 
-
-### 🛠️ 工具系统
+### 🧰 工具系统
 - 内置工具：文件操作、浏览器自动化
 - 可扩展：支持自定义工具注册
 
@@ -168,6 +176,10 @@ python main.py
 │   │   ├── components/    # React 组件
 │   │   ├── pages/         # 页面组件
 │   │   └── ...
+│   ├── public/
+│   │   └── assets/
+│   │       ├── characters/  # 角色帧动画精灵图
+│   │       └── maps/        # Tiled 地图资源
 │   └── package.json
 ├── data/                  # 数据存储
 ├── main.py               # 主入口
