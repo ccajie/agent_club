@@ -27,6 +27,12 @@ export class ChatScene extends Scene {
   private mapLayers: Phaser.Tilemaps.TilemapLayer[] = []
   private collisionRects: Array<{ x: number; y: number; width: number; height: number }> = []
 
+  // 移动相关状态
+  private selectedAgent: string | null = null
+  private agentMapPositions: Map<string, { x: number; y: number }> = new Map()
+  private selectionRing: Phaser.GameObjects.Ellipse | null = null
+  private moveTweens: Map<string, Phaser.Tweens.Tween> = new Map()
+
   constructor() {
     super({ key: 'ChatScene' })
   }
@@ -99,6 +105,15 @@ export class ChatScene extends Scene {
       this.updateAllNPCAnimations()
     }
 
+    // 全局鼠标点击：点击空白处移动选中的 agent
+    this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
+      // 如果点击到了交互对象（如 NPC body），不处理
+      // 因为 NPC body 的 pointerdown 会 stopPropagation
+      if (this.selectedAgent) {
+        this.onMapClick(pointer.x, pointer.y)
+      }
+    })
+
     this.scale.on('resize', this.handleResize, this)
   }
 
@@ -160,59 +175,62 @@ export class ChatScene extends Scene {
   // ========== 帧动画 ==========
 
   private createAnimations() {
-    // 为每个 spritesheet 创建 idle/thinking/speaking 动画
-    // 只使用第0行（朝下方向）的帧，避免切到其他方向
-    const sheets: { key: string; cols: number }[] = [
-      { key: 'worker1_idle', cols: 8 },   // 512/64 = 8列
-      { key: 'worker1_walk', cols: 10 },  // 640/64 = 10列
-    ]
+    // idle: 512×512 → 4行 × 8列，单帧 64×128
+    // walk: 640×512 → 4行 × 10列，单帧 64×128
+    const DIRS = ['down', 'left', 'right', 'up'] as const
 
-    for (const { key, cols } of sheets) {
-      if (!this.textures.exists(key)) continue
+    if (this.textures.exists('worker1_idle')) {
+      const cols = 8
+      for (let row = 0; row < 4; row++) {
+        const dir = DIRS[row]
+        const start = row * cols
+        const frames = this.anims.generateFrameNumbers('worker1_idle', { start, end: start + cols - 1 })
+        if (!frames || frames.length === 0) continue
+        this.anims.create({ key: `worker1_idle_${dir}`, frames, frameRate: 6, repeat: -1 })
+        this.anims.create({ key: `worker1_thinking_${dir}`, frames, frameRate: 6, repeat: -1 })
+        this.anims.create({ key: `worker1_speaking_${dir}`, frames, frameRate: 8, repeat: -1 })
+      }
+    }
 
-      // 只取第0行（朝下方向）的帧：索引 0 到 cols-1
-      const frames = this.anims.generateFrameNumbers(key, { start: 0, end: cols - 1 })
-      if (!frames || frames.length === 0) continue
-
-      const prefix = key
-      this.anims.create({
-        key: `${prefix}_idle`,
-        frames: frames,
-        frameRate: 6,
-        repeat: -1,
-      })
-      this.anims.create({
-        key: `${prefix}_thinking`,
-        frames: frames,
-        frameRate: 6,
-        repeat: -1,
-      })
-      this.anims.create({
-        key: `${prefix}_speaking`,
-        frames: frames,
-        frameRate: 8,
-        repeat: -1,
-      })
+    if (this.textures.exists('worker1_walk')) {
+      const cols = 10
+      for (let row = 0; row < 4; row++) {
+        const dir = DIRS[row]
+        const start = row * cols
+        const frames = this.anims.generateFrameNumbers('worker1_walk', { start, end: start + cols - 1 })
+        if (!frames || frames.length === 0) continue
+        this.anims.create({ key: `worker1_walk_${dir}`, frames, frameRate: 10, repeat: -1 })
+      }
     }
   }
 
-  private getAnimKey(textureKey: string, state: string): string | null {
-    const key = `${textureKey}_${state}`
+  private getAnimKey(textureKey: string, state: string, direction?: string): string | null {
+    const suffix = direction ? `_${direction}` : ''
+    const key = `${textureKey}_${state}${suffix}`
     return this.anims.exists(key) ? key : null
   }
 
-  private playAgentAnim(agentName: string, state: string) {
+  private playAgentAnim(agentName: string, state: string, direction?: string) {
     const npc = this.npcs.get(agentName)
     if (!npc) return
     const body = npc.getAt(1) as Phaser.GameObjects.Sprite
-    const animKey = this.getAnimKey(body.texture.key, state)
+    const animKey = this.getAnimKey(body.texture.key, state, direction)
     if (animKey && body.anims.currentAnim?.key !== animKey) {
       body.play(animKey)
     }
   }
 
   private hasFrameAnim(textureKey: string): boolean {
-    return this.anims.exists(`${textureKey}_idle`)
+    // 支持方向性动画（worker1_idle_down）或旧格式无方向动画
+    return this.anims.exists(`${textureKey}_idle_down`) || this.anims.exists(`${textureKey}_idle`)
+  }
+
+  private getAgentDirection(agentName: string): string {
+    const body = this.npcs.get(agentName)?.getAt(1) as Phaser.GameObjects.Sprite | undefined
+    if (!body) return 'down'
+    const currentKey = body.anims.currentAnim?.key || ''
+    const match = currentKey.match(/_(down|left|right|up)$/)
+    return match ? match[1] : 'down'
   }
 
   // ========== 碰撞检测 ==========
@@ -285,18 +303,24 @@ export class ChatScene extends Scene {
     const offsetY = (this.cameras.main.height - scaledH) / 2
 
     this.agents.forEach((agent, index) => {
-      // 中间区域随机生成安全位置
-      const safe = this.findSafeRandomPos()
-      const mapX = safe.x
-      const mapY = safe.y
+      let mapX: number, mapY: number
+      const saved = this.agentMapPositions.get(agent.name)
+      if (saved) {
+        mapX = saved.x
+        mapY = saved.y
+      } else {
+        const safe = this.findSafeRandomPos()
+        mapX = safe.x
+        mapY = safe.y
+      }
 
-      const x = offsetX + mapX * this.sceneScale
-      const y = offsetY + mapY * this.sceneScale
+      const screenX = offsetX + mapX * this.sceneScale
+      const screenY = offsetY + mapY * this.sceneScale
 
       const isManager = agent.avatar_type === 'manager' || agent.id === 'manager_default'
       const texture = this.resolveAgentTexture(agent.name, isManager)
 
-      this.createSingleNPC(agent.name, x, y, texture, index)
+      this.createSingleNPC(agent.name, screenX, screenY, texture, index, mapX, mapY)
     })
   }
 
@@ -308,16 +332,23 @@ export class ChatScene extends Scene {
     return this.getAgentTextureByName(name)
   }
 
-  private createSingleNPC(name: string, x: number, y: number, textureKey: string, index: number) {
-    const npc = this.add.container(x, y)
+  private createSingleNPC(name: string, screenX: number, screenY: number, textureKey: string, index: number, mapX: number, mapY: number) {
+    const npc = this.add.container(screenX, screenY)
 
     const body = this.add.sprite(0, 0, textureKey)
       .setOrigin(0.5, 0.5)
       .setScale(this.NPC_SCALE)
+      .setInteractive({ cursor: 'pointer' })
 
-    // 如果有帧动画，立即播放 idle
+    // 点击 NPC 选中/取消选中，阻止事件冒泡到地图
+    body.on('pointerdown', (_pointer: Phaser.Input.Pointer, _localX: number, _localY: number, event: Phaser.Types.Input.EventData) => {
+      event.stopPropagation()
+      this.onNPCClick(name)
+    })
+
+    // 如果有帧动画，立即播放 idle（朝下）
     if (this.hasFrameAnim(textureKey)) {
-      const animKey = this.getAnimKey(textureKey, 'idle')
+      const animKey = this.getAnimKey(textureKey, 'idle', 'down')
       if (animKey) body.play(animKey)
     }
 
@@ -333,6 +364,9 @@ export class ChatScene extends Scene {
     npc.add([shadow, body, nameBg, nameLabel])
     npc.setDepth(100)
     this.npcs.set(name, npc)
+
+    // 记录地图坐标
+    this.agentMapPositions.set(name, { x: mapX, y: mapY })
 
     // 无帧动画时才用 tween 做 idle 浮动
     if (!this.hasFrameAnim(textureKey)) {
@@ -350,6 +384,11 @@ export class ChatScene extends Scene {
     this.bounceTimers.clear()
     this.speechTimers.forEach(timer => timer.remove())
     this.speechTimers.clear()
+    this.moveTweens.forEach(tween => tween.stop())
+    this.moveTweens.clear()
+    this.selectedAgent = null
+    this.selectionRing?.destroy()
+    this.selectionRing = null
 
     this.createTilemap()
 
@@ -392,18 +431,19 @@ export class ChatScene extends Scene {
     const body = npc.getAt(1) as Phaser.GameObjects.Sprite
     const hasAnim = this.hasFrameAnim(body.texture.key)
 
+    const dir = this.getAgentDirection(agentName)
+
     switch (status) {
       case 'idle':
         if (hasAnim) {
-          this.playAgentAnim(agentName, 'idle')
+          this.playAgentAnim(agentName, 'idle', dir)
         } else {
           this.startIdleAnimation(agentName)
         }
-        // 气泡不由状态切换控制，由 showNPCDialog 的 30 秒定时器管理
         break
       case 'thinking':
         if (hasAnim) {
-          this.playAgentAnim(agentName, 'thinking')
+          this.playAgentAnim(agentName, 'thinking', dir)
         } else {
           this.tweens.add({
             targets: npc,
@@ -417,7 +457,7 @@ export class ChatScene extends Scene {
         break
       case 'speaking':
         if (hasAnim) {
-          this.playAgentAnim(agentName, 'speaking')
+          this.playAgentAnim(agentName, 'speaking', dir)
         } else {
           this.bounceTimers.set(agentName, this.time.addEvent({
             delay: 200,
@@ -434,6 +474,156 @@ export class ChatScene extends Scene {
         }
         break
     }
+  }
+
+  // ========== 移动与选中 ==========
+
+  private screenToMap(screenX: number, screenY: number): { x: number; y: number } {
+    const scaledW = this.MAP_WIDTH * this.sceneScale
+    const scaledH = this.MAP_HEIGHT * this.sceneScale
+    const offsetX = (this.cameras.main.width - scaledW) / 2
+    const offsetY = (this.cameras.main.height - scaledH) / 2
+    return {
+      x: (screenX - offsetX) / this.sceneScale,
+      y: (screenY - offsetY) / this.sceneScale,
+    }
+  }
+
+  private mapToScreen(mapX: number, mapY: number): { x: number; y: number } {
+    const scaledW = this.MAP_WIDTH * this.sceneScale
+    const scaledH = this.MAP_HEIGHT * this.sceneScale
+    const offsetX = (this.cameras.main.width - scaledW) / 2
+    const offsetY = (this.cameras.main.height - scaledH) / 2
+    return {
+      x: offsetX + mapX * this.sceneScale,
+      y: offsetY + mapY * this.sceneScale,
+    }
+  }
+
+  private onNPCClick(name: string) {
+    if (this.selectedAgent === name) {
+      // 再次点击，取消选中
+      this.selectedAgent = null
+      this.selectionRing?.destroy()
+      this.selectionRing = null
+    } else {
+      // 选中新的（或首次选中），先取消旧的
+      this.selectionRing?.destroy()
+      this.selectionRing = null
+      this.selectedAgent = name
+      this.updateSelectionRing()
+    }
+  }
+
+  private updateSelectionRing() {
+    if (!this.selectedAgent) return
+    const npc = this.npcs.get(this.selectedAgent)
+    if (!npc) return
+
+    this.selectionRing = this.add.ellipse(npc.x, npc.y + 58, 50, 18, 0xffd700, 0.6)
+      .setOrigin(0.5)
+      .setStrokeStyle(2, 0xffa500)
+      .setDepth(95)
+  }
+
+  private onMapClick(screenX: number, screenY: number) {
+    if (!this.selectedAgent) return
+
+    const targetMap = this.screenToMap(screenX, screenY)
+
+    // 边界限制
+    if (targetMap.x < 0 || targetMap.x > this.MAP_WIDTH || targetMap.y < 0 || targetMap.y > this.MAP_HEIGHT) {
+      return
+    }
+
+    // 检查碰撞
+    if (this.isFootprintColliding(targetMap.x, targetMap.y)) {
+      return
+    }
+
+    this.moveAgentTo(this.selectedAgent, targetMap.x, targetMap.y)
+  }
+
+  private moveAgentTo(name: string, targetMapX: number, targetMapY: number) {
+    const npc = this.npcs.get(name)
+    if (!npc) return
+
+    const currentPos = this.agentMapPositions.get(name)
+    if (!currentPos) return
+
+    const dx = targetMapX - currentPos.x
+    const dy = targetMapY - currentPos.y
+    const distance = Math.sqrt(dx * dx + dy * dy)
+    if (distance < 5) return
+
+    // 判断主方向
+    let direction = 'down'
+    if (Math.abs(dx) > Math.abs(dy)) {
+      direction = dx > 0 ? 'right' : 'left'
+    } else {
+      direction = dy > 0 ? 'down' : 'up'
+    }
+
+    // 播放 walk 动画（walk 动画在 worker1_walk spritesheet 上）
+    const body = npc.getAt(1) as Phaser.GameObjects.Sprite
+    const walkKey = `worker1_walk_${direction}`
+    if (this.anims.exists(walkKey)) {
+      body.play(walkKey)
+    }
+
+    // 停止之前的移动 tween
+    const oldTween = this.moveTweens.get(name)
+    if (oldTween) {
+      oldTween.stop()
+      this.moveTweens.delete(name)
+    }
+
+    // 杀掉 NPC 上所有 idle 浮动 tween，避免移动时 y 被拉回
+    this.tweens.killTweensOf(npc)
+
+    const targetScreen = this.mapToScreen(targetMapX, targetMapY)
+    const speed = distance * 6  // 约 6ms/像素，速度减半
+
+    // 用 proxy 对象作为 tween target，避免 killTweensOf(npc) 杀掉移动 tween
+    const proxy = { x: npc.x, y: npc.y }
+
+    const tween = this.tweens.add({
+      targets: proxy,
+      x: targetScreen.x,
+      y: targetScreen.y,
+      duration: Math.min(speed, 2000),
+      ease: 'Linear',
+      onUpdate: () => {
+        npc.x = proxy.x
+        npc.y = proxy.y
+        // 同步气泡
+        const bubble = this.speechBubbles.get(name)
+        if (bubble) {
+          bubble.x = npc.x
+          bubble.y = npc.y - 125
+        }
+        // 同步光圈
+        if (this.selectionRing && this.selectedAgent === name) {
+          this.selectionRing.x = npc.x
+          this.selectionRing.y = npc.y + 58
+        }
+      },
+      onComplete: () => {
+        this.agentMapPositions.set(name, { x: targetMapX, y: targetMapY })
+        this.moveTweens.delete(name)
+        // 恢复 idle（保持方向）
+        const idleKey = `worker1_idle_${direction}`
+        if (this.anims.exists(idleKey)) {
+          body.play(idleKey)
+        }
+        // 无帧动画的角色（如 manager）需要重新启动 idle 浮动
+        if (!this.hasFrameAnim(body.texture.key)) {
+          this.startIdleAnimation(name)
+        }
+      },
+    })
+
+    this.moveTweens.set(name, tween)
   }
 
   private startIdleAnimation(agentName: string, delay: number = 0) {
@@ -470,6 +660,7 @@ export class ChatScene extends Scene {
 
       bubble.add([bg, text])
       bubble.setData('text', text)
+      bubble.setDepth(200)
       this.speechBubbles.set(name, bubble)
     })
   }
