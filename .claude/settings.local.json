@@ -9,7 +9,8 @@
       "Bash(python *)",
       "Bash(pip list *)",
       "Bash(npx vite *)",
-      "Bash(file *)"
+      "Bash(file *)",
+      "Bash(./node_modules/.bin/tsc --noEmit)"
     ]
   }
 }

@@ -1,6 +1,7 @@
 // 类型定义
 
 export type RobotStatus = 'idle' | 'thinking' | 'speaking'
+export type AgentState = 'idle' | 'walking' | 'thinking' | 'speaking'
 
 export interface ChatMessage {
   id: string

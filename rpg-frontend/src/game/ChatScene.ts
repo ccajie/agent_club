@@ -1,5 +1,5 @@
 import { Scene } from 'phaser'
-import type { RobotStatus, AgentInfo } from '../types'
+import type { RobotStatus, AgentState, AgentInfo } from '../types'
 
 // ========== 配置常量 ==========
 
@@ -14,7 +14,8 @@ const MANAGER_CONFIG = {
 export class ChatScene extends Scene {
   private npcs: Map<string, Phaser.GameObjects.Container> = new Map()
   private speechBubbles: Map<string, Phaser.GameObjects.Container> = new Map()
-  private robotStatuses: Map<string, RobotStatus> = new Map()
+  private agentStates: Map<string, AgentState> = new Map()
+  private agentDirections: Map<string, string> = new Map()
   private bounceTimers: Map<string, Phaser.Time.TimerEvent> = new Map()
   private speechTimers: Map<string, Phaser.Time.TimerEvent> = new Map()
   private agents: AgentInfo[] = []
@@ -51,24 +52,22 @@ export class ChatScene extends Scene {
     this.bounceTimers.clear()
     this.speechTimers.forEach(timer => timer.remove())
     this.speechTimers.clear()
+    this.agentStates.clear()
+    this.agentDirections.clear()
   }
 
   setRobotStatus(status: RobotStatus, agentName?: string) {
     if (!agentName) {
-      const hadActiveStatus = Array.from(this.robotStatuses.values()).some(s => s !== 'idle')
-      this.robotStatuses.clear()
+      const hadActiveStatus = Array.from(this.agentStates.values()).some(s => s !== 'idle')
       this.npcs.forEach((_, name) => {
-        this.robotStatuses.set(name, status)
+        this.transitionState(name, status)
       })
       if (hadActiveStatus || status !== 'idle') {
-        this.updateAllNPCAnimations()
+        // transitionState 已处理动画，无需额外调用
       }
       return
     }
-    const currentStatus = this.robotStatuses.get(agentName)
-    if (currentStatus === status) return
-    this.robotStatuses.set(agentName, status)
-    this.updateNPCAnimation(agentName)
+    this.transitionState(agentName, status)
   }
 
   // ========== 生命周期 ==========
@@ -79,10 +78,14 @@ export class ChatScene extends Scene {
     // 瓦片图片（被内嵌 tileset 引用）
     this.load.image('libmap', '/assets/maps/libmap.png')
 
-    // 帧动画精灵图：4行(下/左/右/上) × N列，单帧 64×128
-    // idle: 512×512 → 4行 × 8列；walk: 640×512 → 4行 × 10列
+    // 帧动画精灵图：4行(下/左/右/上) × N列
+    // worker: 单帧 64×128；idle: 512×512 → 4行 × 8列；walk: 640×512 → 4行 × 10列
     this.load.spritesheet('worker1_idle', '/assets/characters/worker1_idle.png', { frameWidth: 64, frameHeight: 128 })
     this.load.spritesheet('worker1_walk', '/assets/characters/worker1_walking.png', { frameWidth: 64, frameHeight: 128 })
+
+    // manager: 单帧 48×96；idle/walk: 576×384 → 4行 × 12列
+    this.load.spritesheet('manager_idle', '/assets/characters/manager_idle.png', { frameWidth: 48, frameHeight: 96 })
+    this.load.spritesheet('manager_walk', '/assets/characters/manager_walking.png', { frameWidth: 48, frameHeight: 96 })
 
     // 代码生成纹理回退（角色 + 气泡）
     this.createPixelTexturesFallback()
@@ -100,9 +103,8 @@ export class ChatScene extends Scene {
       this.createNPCs()
       this.createSpeechBubbles()
       this.npcs.forEach((_, name) => {
-        this.robotStatuses.set(name, 'idle')
+        this.transitionState(name, 'idle')
       })
-      this.updateAllNPCAnimations()
     }
 
     // 全局鼠标点击：点击空白处移动选中的 agent
@@ -166,8 +168,9 @@ export class ChatScene extends Scene {
         width: obj.width ?? 0,
         height: obj.height ?? 0,
       }))
-      console.log(`Loaded collision layer with ${this.collisionRects.length} objects`)
+      console.log(`[collision] Loaded ${this.collisionRects.length} rects:`, this.collisionRects)
     } else {
+      console.warn('[collision] No collisions layer found!')
       this.collisionRects = []
     }
   }
@@ -175,10 +178,9 @@ export class ChatScene extends Scene {
   // ========== 帧动画 ==========
 
   private createAnimations() {
-    // idle: 512×512 → 4行 × 8列，单帧 64×128
-    // walk: 640×512 → 4行 × 10列，单帧 64×128
     const DIRS = ['down', 'left', 'right', 'up'] as const
 
+    // worker1 idle: 4行 × 8列，单帧 64×128
     if (this.textures.exists('worker1_idle')) {
       const cols = 8
       for (let row = 0; row < 4; row++) {
@@ -192,6 +194,7 @@ export class ChatScene extends Scene {
       }
     }
 
+    // worker1 walk: 4行 × 10列，单帧 64×128
     if (this.textures.exists('worker1_walk')) {
       const cols = 10
       for (let row = 0; row < 4; row++) {
@@ -202,11 +205,40 @@ export class ChatScene extends Scene {
         this.anims.create({ key: `worker1_walk_${dir}`, frames, frameRate: 10, repeat: -1 })
       }
     }
+
+    // manager idle: 4行 × 12列，单帧 48×96
+    if (this.textures.exists('manager_idle')) {
+      const cols = 12
+      for (let row = 0; row < 4; row++) {
+        const dir = DIRS[row]
+        const start = row * cols
+        const frames = this.anims.generateFrameNumbers('manager_idle', { start, end: start + cols - 1 })
+        if (!frames || frames.length === 0) continue
+        this.anims.create({ key: `manager_idle_${dir}`, frames, frameRate: 6, repeat: -1 })
+        this.anims.create({ key: `manager_thinking_${dir}`, frames, frameRate: 6, repeat: -1 })
+        this.anims.create({ key: `manager_speaking_${dir}`, frames, frameRate: 8, repeat: -1 })
+      }
+    }
+
+    // manager walk: 4行 × 12列，单帧 48×96
+    if (this.textures.exists('manager_walk')) {
+      const cols = 12
+      for (let row = 0; row < 4; row++) {
+        const dir = DIRS[row]
+        const start = row * cols
+        const frames = this.anims.generateFrameNumbers('manager_walk', { start, end: start + cols - 1 })
+        if (!frames || frames.length === 0) continue
+        this.anims.create({ key: `manager_walk_${dir}`, frames, frameRate: 10, repeat: -1 })
+      }
+    }
   }
 
   private getAnimKey(textureKey: string, state: string, direction?: string): string | null {
+    // Phaser 播放 walk 动画时会自动把 sprite.texture.key 切到 walk spritesheet，
+    // 所以 textureKey 可能是 'worker1_idle'、'worker1_walk'、'manager_idle'、'manager_walk'
+    const baseKey = textureKey.replace('_idle', '').replace('_walk', '')
     const suffix = direction ? `_${direction}` : ''
-    const key = `${textureKey}_${state}${suffix}`
+    const key = `${baseKey}_${state}${suffix}`
     return this.anims.exists(key) ? key : null
   }
 
@@ -221,16 +253,8 @@ export class ChatScene extends Scene {
   }
 
   private hasFrameAnim(textureKey: string): boolean {
-    // 支持方向性动画（worker1_idle_down）或旧格式无方向动画
-    return this.anims.exists(`${textureKey}_idle_down`) || this.anims.exists(`${textureKey}_idle`)
-  }
-
-  private getAgentDirection(agentName: string): string {
-    const body = this.npcs.get(agentName)?.getAt(1) as Phaser.GameObjects.Sprite | undefined
-    if (!body) return 'down'
-    const currentKey = body.anims.currentAnim?.key || ''
-    const match = currentKey.match(/_(down|left|right|up)$/)
-    return match ? match[1] : 'down'
+    const baseKey = textureKey.replace('_idle', '')
+    return this.anims.exists(`${baseKey}_idle_down`) || this.anims.exists(`${baseKey}_idle`)
   }
 
   // ========== 碰撞检测 ==========
@@ -241,10 +265,14 @@ export class ChatScene extends Scene {
     const footY = mapY - 12
     const footW = 30
     const footH = 12
-    return this.collisionRects.some(r =>
+    const colliding = this.collisionRects.some(r =>
       footX < r.x + r.width && footX + footW > r.x &&
       footY < r.y + r.height && footY + footH > r.y
     )
+    if (colliding) {
+      console.log(`[collision] (${mapX.toFixed(0)},${mapY.toFixed(0)}) collides with footprint [${footX.toFixed(0)},${footY.toFixed(0)} ${footW}x${footH}]`)
+    }
+    return colliding
   }
 
   private findSafePos(mapX: number, mapY: number): { x: number; y: number } {
@@ -326,6 +354,7 @@ export class ChatScene extends Scene {
 
   private resolveAgentTexture(name: string, isManager: boolean): string {
     if (isManager) {
+      if (this.textures.exists('manager_idle')) return 'manager_idle'
       return MANAGER_CONFIG.texture
     }
     if (this.textures.exists('worker1_idle')) return 'worker1_idle'
@@ -335,9 +364,11 @@ export class ChatScene extends Scene {
   private createSingleNPC(name: string, screenX: number, screenY: number, textureKey: string, index: number, mapX: number, mapY: number) {
     const npc = this.add.container(screenX, screenY)
 
+    const isManagerAnim = textureKey === 'manager_idle'
+    const bodyScale = isManagerAnim ? 1.8 : this.NPC_SCALE
     const body = this.add.sprite(0, 0, textureKey)
       .setOrigin(0.5, 0.5)
-      .setScale(this.NPC_SCALE)
+      .setScale(bodyScale)
       .setInteractive({ cursor: 'pointer' })
 
     // 点击 NPC 选中/取消选中，阻止事件冒泡到地图
@@ -368,6 +399,10 @@ export class ChatScene extends Scene {
     // 记录地图坐标
     this.agentMapPositions.set(name, { x: mapX, y: mapY })
 
+    // 初始化状态机状态
+    this.agentStates.set(name, 'idle')
+    this.agentDirections.set(name, 'down')
+
     // 无帧动画时才用 tween 做 idle 浮动
     if (!this.hasFrameAnim(textureKey)) {
       this.startIdleAnimation(name, index * 200)
@@ -386,6 +421,8 @@ export class ChatScene extends Scene {
     this.speechTimers.clear()
     this.moveTweens.forEach(tween => tween.stop())
     this.moveTweens.clear()
+    this.agentStates.clear()
+    this.agentDirections.clear()
     this.selectedAgent = null
     this.selectionRing?.destroy()
     this.selectionRing = null
@@ -396,9 +433,8 @@ export class ChatScene extends Scene {
       this.createNPCs()
       this.createSpeechBubbles()
       this.npcs.forEach((_, name) => {
-        this.robotStatuses.set(name, 'idle')
+        this.transitionState(name, 'idle')
       })
-      this.updateAllNPCAnimations()
     }
   }
 
@@ -409,36 +445,62 @@ export class ChatScene extends Scene {
     this.recreateNPCs()
   }
 
-  // ========== 动画 ==========
+  // ========== 状态机 ==========
 
-  private updateAllNPCAnimations() {
-    this.npcs.forEach((_, name) => this.updateNPCAnimation(name))
-  }
-
-  private updateNPCAnimation(agentName: string) {
+  private transitionState(agentName: string, newState: AgentState, direction?: string) {
     const npc = this.npcs.get(agentName)
     if (!npc) return
 
-    const status = this.robotStatuses.get(agentName) || 'idle'
-    this.tweens.killTweensOf(npc)
-    const existingTimer = this.bounceTimers.get(agentName)
-    if (existingTimer) {
-      existingTimer.remove()
+    // 1. 始终清理旧效果（移动中再次点击需要 stop 旧 tween）
+    this.clearAgentEffects(agentName)
+
+    // 2. 更新状态与方向（即使状态相同也要更新方向）
+    this.agentStates.set(agentName, newState)
+    if (direction) {
+      this.agentDirections.set(agentName, direction)
+    }
+
+    // 3. 应用新状态的视觉表现（始终执行，确保动画正确播放）
+    this.applyStateVisuals(agentName, newState)
+  }
+
+  private clearAgentEffects(agentName: string) {
+    const npc = this.npcs.get(agentName)
+    if (npc) this.tweens.killTweensOf(npc)
+
+    const bounceTimer = this.bounceTimers.get(agentName)
+    if (bounceTimer) {
+      bounceTimer.remove()
       this.bounceTimers.delete(agentName)
     }
 
-    // 检查是否有帧动画
+    const moveTween = this.moveTweens.get(agentName)
+    if (moveTween) {
+      moveTween.stop()
+      this.moveTweens.delete(agentName)
+    }
+  }
+
+  private applyStateVisuals(agentName: string, state: AgentState) {
+    const npc = this.npcs.get(agentName)
+    if (!npc) return
+
     const body = npc.getAt(1) as Phaser.GameObjects.Sprite
     const hasAnim = this.hasFrameAnim(body.texture.key)
+    const dir = this.agentDirections.get(agentName) ?? 'down'
 
-    const dir = this.getAgentDirection(agentName)
 
-    switch (status) {
+    switch (state) {
       case 'idle':
         if (hasAnim) {
           this.playAgentAnim(agentName, 'idle', dir)
         } else {
           this.startIdleAnimation(agentName)
+        }
+        break
+      case 'walking':
+        if (hasAnim) {
+          this.playAgentAnim(agentName, 'walk', dir)
         }
         break
       case 'thinking':
@@ -564,22 +626,8 @@ export class ChatScene extends Scene {
       direction = dy > 0 ? 'down' : 'up'
     }
 
-    // 播放 walk 动画（walk 动画在 worker1_walk spritesheet 上）
-    const body = npc.getAt(1) as Phaser.GameObjects.Sprite
-    const walkKey = `worker1_walk_${direction}`
-    if (this.anims.exists(walkKey)) {
-      body.play(walkKey)
-    }
-
-    // 停止之前的移动 tween
-    const oldTween = this.moveTweens.get(name)
-    if (oldTween) {
-      oldTween.stop()
-      this.moveTweens.delete(name)
-    }
-
-    // 杀掉 NPC 上所有 idle 浮动 tween，避免移动时 y 被拉回
-    this.tweens.killTweensOf(npc)
+    // 通过状态机进入 walking 状态（自动清理旧效果、播放 walk 动画）
+    this.transitionState(name, 'walking', direction)
 
     const targetScreen = this.mapToScreen(targetMapX, targetMapY)
     const speed = distance * 6  // 约 6ms/像素，速度减半
@@ -611,12 +659,17 @@ export class ChatScene extends Scene {
       onComplete: () => {
         this.agentMapPositions.set(name, { x: targetMapX, y: targetMapY })
         this.moveTweens.delete(name)
-        // 恢复 idle（保持方向）
-        const idleKey = `worker1_idle_${direction}`
-        if (this.anims.exists(idleKey)) {
-          body.play(idleKey)
+
+        // 移动完成：直接恢复 idle 动画，不经过 transitionState
+        // 避免 clearAgentEffects 中 killTweensOf 的潜在副作用
+        this.agentStates.set(name, 'idle')
+        const body = npc.getAt(1) as Phaser.GameObjects.Sprite
+        const dir = this.agentDirections.get(name) ?? 'down'
+        const idleAnimKey = this.getAnimKey(body.texture.key, 'idle', dir)
+        if (idleAnimKey) {
+          body.play(idleAnimKey)
         }
-        // 无帧动画的角色（如 manager）需要重新启动 idle 浮动
+        // 无帧动画角色启动 idle 浮动
         if (!this.hasFrameAnim(body.texture.key)) {
           this.startIdleAnimation(name)
         }
