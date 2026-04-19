@@ -19,6 +19,7 @@ class CreateAgentRequest(BaseModel):
     provider_id: str = Field(..., description="关联的 Provider ID")
     specialty: str = Field(default="通用任务", description="专业领域")
     expertise: str = Field(default="", description="具体专长描述")
+    skill_ids: Optional[List[str]] = Field(default_factory=list, description="关联的 Skill ID 列表")
 
 
 class UpdateAgentRequest(BaseModel):
@@ -30,6 +31,7 @@ class UpdateAgentRequest(BaseModel):
     provider_id: Optional[str] = Field(default=None, description="关联的 Provider ID")
     specialty: Optional[str] = Field(default=None, description="专业领域")
     expertise: Optional[str] = Field(default=None, description="具体专长描述")
+    skill_ids: Optional[List[str]] = Field(default=None, description="关联的 Skill ID 列表")
     is_active: Optional[bool] = Field(default=None)
 
 

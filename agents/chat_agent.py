@@ -20,6 +20,7 @@ class ChatAgent(AgentBase):
         name: Agent 名称
         role: Agent 角色描述（用于 system prompt）
         personality: Agent 性格特点
+        skill_names: 关联的 Skill 名称列表
     """
 
     def __init__(
@@ -30,6 +31,7 @@ class ChatAgent(AgentBase):
         model_name: str = "qwen-max",
         api_key: Optional[str] = None,
         llm_config: Optional[Dict[str, Any]] = None,
+        skill_names: Optional[List[str]] = None,
     ):
         """
         初始化聊天智能体
@@ -41,11 +43,13 @@ class ChatAgent(AgentBase):
             model_name: 使用的语言模型名称
             api_key: API 密钥
             llm_config: 语言模型配置字典
+            skill_names: 关联的技能名称列表
         """
         super().__init__()
         self.name = name
         self.role = role
         self.personality = personality
+        self.skill_names = skill_names or []
 
         # 使用 llm_config 或回退到旧参数
         if llm_config:
@@ -82,12 +86,16 @@ class ChatAgent(AgentBase):
         )
 
     def _create_system_prompt(self) -> str:
-        """创建角色化的 system prompt"""
+        """创建角色化的 system prompt，注入所有启用的技能"""
         from tools import list_tools
         available_tools = list_tools()
         tools_info = "、".join(available_tools) if available_tools else "暂无"
 
-        return f"""你是{self.name}，{self.role}。
+        # 注入技能说明
+        from skills import skill_registry
+        skills_prompt = skill_registry.get_skills_prompt(self.skill_names)
+
+        base_prompt = f"""你是{self.name}，{self.role}。
 
 你的性格特点：{self.personality}
 
@@ -100,6 +108,10 @@ class ChatAgent(AgentBase):
 4. 不要透露你是 AI，始终保持角色扮演
 5. 需要时使用工具完成任务，但不要过度依赖
 """
+
+        if skills_prompt:
+            return base_prompt + "\n\n" + skills_prompt
+        return base_prompt
 
     def _create_model(self):
         """根据配置创建对应的模型实例"""
@@ -133,6 +145,9 @@ class ChatAgent(AgentBase):
     async def reply(self, msg: Msg) -> Msg:
         """
         处理消息并生成回复
+
+        skill 已通过 system prompt 全局注入，LLM 自主决定是否使用。
+        无需再对单条消息做额外扫描或注入。
 
         Args:
             msg: 输入消息

@@ -51,11 +51,13 @@ class ManagerAgent(AgentBase):
         model_name: str = "qwen-max",
         api_key: Optional[str] = None,
         llm_config: Optional[Dict[str, Any]] = None,
+        skill_names: Optional[List[str]] = None,
     ):
         super().__init__()
         self.name = name
         self.role = role
         self.personality = personality
+        self.skill_names = skill_names or []
 
         # 初始化模型
         if llm_config:
@@ -103,6 +105,11 @@ class ManagerAgent(AgentBase):
                 model_name=self.model_name,
                 api_key=self.api_key
             )
+
+    def _get_skills_prompt(self) -> str:
+        """获取技能说明文本，用于注入 system prompt"""
+        from skills import skill_registry
+        return skill_registry.get_skills_prompt(self.skill_names)
 
     def register_worker(self, worker: 'WorkerAgent'):
         """注册Worker Agent"""
@@ -188,10 +195,13 @@ class ManagerAgent(AgentBase):
     async def _create_task_plan(self, user_request: str) -> TaskPlan:
         """分析用户请求，创建任务执行计划"""
 
+        skills_text = self._get_skills_prompt()
         system_prompt = f"""你是{self.name}，{self.role}。
 
 你的团队成员及其专长：
 {self.get_worker_capabilities()}
+
+{skills_text}
 
 请分析用户的请求，判断是否需要分派给团队成员：
 1. 如果请求简单，直接回复 "DIRECT"，不需要分派
@@ -372,9 +382,12 @@ class ManagerAgent(AgentBase):
         print(f"\n   📊 [Manager] 收集到{len(results_summary)}个Worker的结果")
 
         # 让Manager整合结果
+        skills_text = self._get_skills_prompt()
         system_prompt = f"""你是{self.name}，{self.role}。
 
 原始用户请求: {task_plan.description}
+
+{skills_text}
 
 各团队成员的执行结果：
 {all_results}
@@ -396,9 +409,12 @@ class ManagerAgent(AgentBase):
 
     async def _handle_directly(self, msg: Msg) -> Msg:
         """直接处理请求（不需要分派）"""
+        skills_text = self._get_skills_prompt()
         system_prompt = f"""你是{self.name}，{self.role}。
 
 你的性格特点：{self.personality}
+
+{skills_text}
 
 可以直接回答用户的问题，不需要分派给团队成员。"""
 
@@ -444,6 +460,7 @@ class WorkerAgent:
         api_key: Optional[str] = None,
         llm_config: Optional[Dict[str, Any]] = None,
         tools: Optional[List[str]] = None,  # 该Worker可用的工具
+        skill_names: Optional[List[str]] = None,
     ):
         self.name = name
         self.role = role
@@ -467,7 +484,8 @@ class WorkerAgent:
             name=name,
             role=role,
             personality=personality,
-            llm_config=worker_llm_config
+            llm_config=worker_llm_config,
+            skill_names=skill_names,
         )
 
     def set_manager(self, manager: ManagerAgent):

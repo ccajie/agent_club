@@ -8,6 +8,7 @@ import random
 from typing import List, Optional, Dict, Any
 from pydantic import BaseModel, Field
 from datetime import datetime
+from skills import skill_registry
 
 # 配置文件路径 - 放在项目根目录
 CONFIG_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "agents_config.json")
@@ -32,6 +33,9 @@ class AgentConfig(BaseModel):
     # 引用 Provider
     provider_id: str = Field(..., description="关联的 Provider ID")
 
+    # Skill 配置
+    skill_ids: List[str] = Field(default_factory=list, description="关联的 Skill ID 列表")
+
     # 元数据
     created_at: str = Field(default_factory=lambda: datetime.now().isoformat())
     updated_at: str = Field(default_factory=lambda: datetime.now().isoformat())
@@ -52,6 +56,13 @@ class AgentConfig(BaseModel):
                 "model_name": provider.model_name,
             }
 
+        # 获取技能信息
+        skills_info = []
+        for sid in self.skill_ids:
+            skill = skill_registry.get_skill(sid)
+            if skill:
+                skills_info.append(skill.to_info())
+
         return {
             "id": self.id,
             "name": self.name,
@@ -63,6 +74,8 @@ class AgentConfig(BaseModel):
             "expertise": self.expertise,
             "provider_id": self.provider_id,
             "provider": provider_info,
+            "skill_ids": self.skill_ids,
+            "skills": skills_info,
             "created_at": self.created_at,
             "updated_at": self.updated_at,
             "is_active": self.is_active,
@@ -162,7 +175,7 @@ class AgentsConfigManager:
             return None
 
         # 更新字段 - 只包含 Agent 自身属性，模型配置通过 provider_id 引用
-        for field in ["name", "role", "personality", "avatar_type", "agent_type", "specialty", "expertise", "provider_id", "is_active"]:
+        for field in ["name", "role", "personality", "avatar_type", "agent_type", "specialty", "expertise", "provider_id", "is_active", "skill_ids"]:
             if field in data:
                 setattr(agent, field, data[field])
 

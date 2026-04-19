@@ -8,13 +8,13 @@ import type {
   UpdateAgentRequest,
   TestConnectionResponse,
   ProviderType,
-  AvatarType,
   Provider,
   CreateProviderRequest,
   UpdateProviderRequest,
   ToolConfig,
   ToolUpdateResponse,
   ManagerConfig,
+  Skill,
 } from '../types'
 
 // 自动检测环境：开发模式使用代理，生产模式使用相对路径
@@ -235,6 +235,40 @@ export const api = {
 
     fetchStream()
     return () => controller.abort()
+  },
+
+  // ========== Skill 管理 API ==========
+
+  // 获取所有技能列表
+  async getSkills(includeDisabled: boolean = false): Promise<Skill[]> {
+    const response = await client.get<{ skills: Skill[]; total: number }>('/skills', {
+      params: { include_disabled: includeDisabled },
+    })
+    return response.data.skills
+  },
+
+  // 获取单个技能详情
+  async getSkill(skillId: string): Promise<Skill> {
+    const response = await client.get<Skill>(`/skills/${skillId}`)
+    return response.data
+  },
+
+  // 更新技能启用状态
+  async updateSkill(skillId: string, enabled: boolean): Promise<{ success: boolean; skill: Skill | null }> {
+    const response = await client.put(`/skills/${skillId}`, { is_enabled: enabled })
+    return response.data
+  },
+
+  // 启用技能
+  async enableSkill(skillId: string): Promise<{ success: boolean; skill: Skill | null }> {
+    const response = await client.post(`/skills/${skillId}/enable`)
+    return response.data
+  },
+
+  // 禁用技能
+  async disableSkill(skillId: string): Promise<{ success: boolean; skill: Skill | null }> {
+    const response = await client.post(`/skills/${skillId}/disable`)
+    return response.data
   },
 
   // ========== Manager Agent API ==========

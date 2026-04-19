@@ -1,0 +1,7 @@
+{
+  "enabled": {
+    "data_analyst": true,
+    "writing_assistant": true,
+    "coding_assistant": true
+  }
+}

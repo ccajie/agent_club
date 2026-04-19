@@ -32,6 +32,8 @@ from api.agents_api import router as agents_router
 from api.providers_api import router as providers_router
 from api.tools_api import router as tools_router
 from api.manager_api import router as manager_router
+from api.skills_api import router as skills_router
+from skills import skill_registry
 
 # ============== 全局状态 ==============
 system_state = {
@@ -222,6 +224,7 @@ async def _init_manager_worker_mode(manager_config: Any, worker_configs: List[Ag
                 role=manager_config.role,
                 personality=manager_config.personality,
                 llm_config=llm_config,
+                skill_names=[],  # Manager 暂时不配置 skills，后续可扩展
             )
             system_state["manager"] = manager
         except Exception as e:
@@ -246,6 +249,7 @@ async def _init_manager_worker_mode(manager_config: Any, worker_configs: List[Ag
                 specialty=config.specialty or "通用任务",
                 expertise=config.expertise or config.role,
                 llm_config=llm_config,
+                skill_names=config.skill_ids,
             )
             workers.append(worker)
         except Exception as e:
@@ -291,6 +295,7 @@ async def _init_msghub_mode(worker_configs: List[AgentConfig]):
                 role=config.role,
                 personality=config.personality,
                 llm_config=llm_config,
+                skill_names=config.skill_ids,
             )
             agents.append(agent)
         except Exception as e:
@@ -337,6 +342,9 @@ app.include_router(tools_router)
 
 # 添加 Manager 配置路由
 app.include_router(manager_router)
+
+# 添加 Skill 管理路由
+app.include_router(skills_router)
 
 
 # ============== API 端点 ==============

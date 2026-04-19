@@ -7,11 +7,15 @@
       "personality": "严谨",
       "avatar_type": "aiden",
       "agent_type": "worker",
-      "specialty": "",
+      "specialty": "代码开发",
       "expertise": "",
       "provider_id": "provider",
+      "skill_ids": [
+        "coding_assistant",
+        "test_pirate"
+      ],
       "created_at": "2026-03-16T23:15:41.984930",
-      "updated_at": "2026-03-17T22:55:09.302737",
+      "updated_at": "2026-04-19T08:45:17.598216",
       "is_active": true
     },
     {
@@ -24,6 +28,7 @@
       "specialty": "",
       "expertise": "",
       "provider_id": "provider",
+      "skill_ids": [],
       "created_at": "2026-03-16T23:58:13.436660",
       "updated_at": "2026-03-17T23:12:03.357845",
       "is_active": true

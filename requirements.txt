@@ -1,7 +1,7 @@
 # FastAPI 后端
-fastapi>=0.104.0
-uvicorn[standard]>=0.24.0
-python-multipart>=0.0.6
+fastapi>=0.136.0
+uvicorn[standard]>=0.44.0
+python-multipart>=0.0.26
 
 # RAG 知识库依赖（从原项目继承）
 # 请根据原项目实际需要添加，如：

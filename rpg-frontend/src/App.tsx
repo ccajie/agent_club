@@ -5,10 +5,11 @@ import { ChatInput } from './components/ChatInput'
 import { AgentConfigPage } from './pages/AgentConfigPage'
 import { ProviderConfigPage } from './pages/ProviderConfigPage'
 import { ToolConfigPage } from './pages/ToolConfigPage'
+import { SkillConfigPage } from './pages/SkillConfigPage'
 import type { ChatMessage, RobotStatus, AgentInfo } from './types'
 import { api } from './api'
 
-type Page = 'chat' | 'agents' | 'providers' | 'tools'
+type Page = 'chat' | 'agents' | 'providers' | 'tools' | 'skills'
 
 // 图标组件
 const ChatIcon = () => (
@@ -36,6 +37,12 @@ const ProviderIcon = () => (
 const ToolIcon = () => (
   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>
+  </svg>
+)
+
+const SkillIcon = () => (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
   </svg>
 )
 
@@ -366,6 +373,13 @@ function App() {
             <ToolIcon />
             <span>工具管理</span>
           </button>
+          <button
+            className={`nav-item ${currentPage === 'skills' ? 'active' : ''}`}
+            onClick={() => setCurrentPage('skills')}
+          >
+            <SkillIcon />
+            <span>技能管理</span>
+          </button>
         </div>
       </nav>
 
@@ -467,6 +481,7 @@ function App() {
         {currentPage === 'agents' && <AgentConfigPage />}
         {currentPage === 'providers' && <ProviderConfigPage />}
         {currentPage === 'tools' && <ToolConfigPage />}
+        {currentPage === 'skills' && <SkillConfigPage />}
       </main>
     </div>
   )

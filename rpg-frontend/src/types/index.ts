@@ -69,6 +69,8 @@ export interface AgentConfig {
   specialty?: string
   expertise?: string
   agent_type?: 'manager' | 'worker'
+  skill_ids?: string[]
+  skills?: Skill[]
 }
 
 export interface CreateAgentRequest {
@@ -140,6 +142,22 @@ export interface EmbeddingConfig {
   api_key_prefix: string
   is_dashscope: boolean
   dashscope_model: string
+}
+
+// ========== Skill 类型 ==========
+
+export interface Skill {
+  name: string
+  description: string
+  is_enabled: boolean
+  source_file: string
+  metadata?: Record<string, any>
+  preview: string
+  content?: string
+}
+
+export interface UpdateSkillRequest {
+  is_enabled: boolean
 }
 
 // 默认配置常量

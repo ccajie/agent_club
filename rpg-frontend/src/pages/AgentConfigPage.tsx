@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import type { AgentConfig, Provider } from '../types'
+import type { AgentConfig, Provider, Skill } from '../types'
 import { api } from '../api'
 
 interface AgentFormData {
@@ -9,6 +9,7 @@ interface AgentFormData {
   provider_id: string
   specialty: string
   expertise: string
+  skill_ids: string[]
 }
 
 interface ManagerFormData {
@@ -26,6 +27,7 @@ const initialAgentFormData: AgentFormData = {
   provider_id: '',
   specialty: '',
   expertise: '',
+  skill_ids: [],
 }
 
 const initialManagerFormData: ManagerFormData = {
@@ -40,6 +42,7 @@ export const AgentConfigPage = () => {
   const [agents, setAgents] = useState<AgentConfig[]>([])
   const [manager, setManager] = useState<AgentConfig | null>(null)
   const [providers, setProviders] = useState<Provider[]>([])
+  const [skills, setSkills] = useState<Skill[]>([])
   const [loading, setLoading] = useState(true)
   const [showAgentForm, setShowAgentForm] = useState(false)
   const [showManagerForm, setShowManagerForm] = useState(false)
@@ -93,6 +96,15 @@ export const AgentConfigPage = () => {
       alert('加载 Provider 列表失败，请先配置 Provider')
     }
 
+    // 加载 Skills（只加载已启用的）
+    try {
+      const skillsRes = await api.getSkills(false)
+      console.log('Loaded skills:', skillsRes)
+      setSkills(skillsRes)
+    } catch (error) {
+      console.error('Failed to load skills:', error)
+    }
+
     setLoading(false)
   }
 
@@ -118,6 +130,7 @@ export const AgentConfigPage = () => {
       provider_id: agent.provider_id,
       specialty: agent.specialty || '',
       expertise: agent.expertise || '',
+      skill_ids: agent.skill_ids || [],
     })
     setShowAgentForm(true)
   }
@@ -158,6 +171,7 @@ export const AgentConfigPage = () => {
       provider_id: agentFormData.provider_id,
       specialty: agentFormData.specialty,
       expertise: agentFormData.expertise,
+      skill_ids: agentFormData.skill_ids,
     }
 
     console.log('Saving agent data:', saveData)
@@ -431,6 +445,26 @@ export const AgentConfigPage = () => {
                       🎯 专长: {agent.specialty}
                     </div>
                   )}
+                  {agent.skills && agent.skills.length > 0 && (
+                    <div className="provider-meta" style={{ marginTop: '8px' }}>
+                      {agent.skills.map((skill, i) => (
+                        <span
+                          key={i}
+                          style={{
+                            display: 'inline-block',
+                            padding: '2px 8px',
+                            margin: '0 6px 4px 0',
+                            background: 'rgba(0, 184, 148, 0.15)',
+                            borderRadius: '4px',
+                            fontSize: '12px',
+                            color: '#00b894',
+                          }}
+                        >
+                          {skill.name}
+                        </span>
+                      ))}
+                    </div>
+                  )}
                 </div>
                 <div className="provider-actions">
                   <button
@@ -548,6 +582,105 @@ export const AgentConfigPage = () => {
                     详细描述专长，帮助 Manager 更准确地分派任务
                   </span>
                 </div>
+              </div>
+
+              {/* Skill 选择 */}
+              <div className="form-section" style={{ marginBottom: '24px' }}>
+                <h4 style={{ marginBottom: '12px', color: 'var(--pixel-accent)' }}>技能配置</h4>
+
+                {skills.length === 0 ? (
+                  <div style={{ padding: '12px', background: 'rgba(99, 110, 114, 0.15)', borderRadius: '8px', fontSize: '13px', color: '#999' }}>
+                    暂无可用的技能。请先前往「技能管理」页面启用技能。
+                  </div>
+                ) : (
+                  <>
+                    <div
+                      style={{
+                        maxHeight: '160px',
+                        overflowY: 'auto',
+                        border: '2px solid var(--pixel-surface)',
+                        borderRadius: '8px',
+                        padding: '10px',
+                        background: 'rgba(99, 110, 114, 0.1)',
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: 'grid',
+                          gridTemplateColumns: 'repeat(auto-fill, minmax(110px, 1fr))',
+                          gap: '8px',
+                        }}
+                      >
+                        {skills.map(skill => {
+                          const isSelected = agentFormData.skill_ids.includes(skill.name)
+                          return (
+                            <label
+                              key={skill.name}
+                              title={skill.name}
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '6px',
+                                padding: '6px 10px',
+                                borderRadius: '6px',
+                                cursor: 'pointer',
+                                fontSize: '13px',
+                                whiteSpace: 'nowrap',
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                background: isSelected
+                                  ? 'rgba(0, 184, 148, 0.2)'
+                                  : 'rgba(99, 110, 114, 0.2)',
+                                border: isSelected
+                                  ? '1px solid rgba(0, 184, 148, 0.5)'
+                                  : '1px solid transparent',
+                                color: isSelected ? '#00b894' : 'var(--pixel-text)',
+                              }}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={isSelected}
+                                onChange={e => {
+                                  if (e.target.checked) {
+                                    setAgentFormData({
+                                      ...agentFormData,
+                                      skill_ids: [...agentFormData.skill_ids, skill.name],
+                                    })
+                                  } else {
+                                    setAgentFormData({
+                                      ...agentFormData,
+                                      skill_ids: agentFormData.skill_ids.filter(id => id !== skill.name),
+                                    })
+                                  }
+                                }}
+                                style={{
+                                  width: '14px',
+                                  height: '14px',
+                                  flexShrink: 0,
+                                  cursor: 'pointer',
+                                }}
+                              />
+                              <span
+                                style={{
+                                  overflow: 'hidden',
+                                  textOverflow: 'ellipsis',
+                                  whiteSpace: 'nowrap',
+                                }}
+                              >
+                                {skill.name}
+                              </span>
+                            </label>
+                          )
+                        })}
+                      </div>
+                    </div>
+                    {agentFormData.skill_ids.length > 0 && (
+                      <div style={{ marginTop: '6px', fontSize: '12px', color: '#00b894' }}>
+                        已选择 {agentFormData.skill_ids.length} 个技能
+                      </div>
+                    )}
+                  </>
+                )}
               </div>
 
               {/* Provider 选择 */}
