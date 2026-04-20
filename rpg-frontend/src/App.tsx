@@ -7,6 +7,7 @@ import { ProviderConfigPage } from './pages/ProviderConfigPage'
 import { ToolConfigPage } from './pages/ToolConfigPage'
 import { SkillConfigPage } from './pages/SkillConfigPage'
 import type { ChatMessage, RobotStatus, AgentInfo } from './types'
+import type { GameConfig } from './game/config'
 import { api } from './api'
 
 type Page = 'chat' | 'agents' | 'providers' | 'tools' | 'skills'
@@ -70,45 +71,56 @@ function App() {
   const [currentPage, setCurrentPage] = useState<Page>('chat')
   const [agents, setAgents] = useState<AgentInfo[]>([])
   const [activeAgents, setActiveAgents] = useState<string[]>([])
+  const [gameConfig, setGameConfig] = useState<GameConfig | null>(null)
+
+  // 加载游戏配置
+  useEffect(() => {
+    fetch('/assets/game-config.json')
+      .then(r => r.json())
+      .then((cfg: GameConfig) => setGameConfig(cfg))
+      .catch(err => console.error('Failed to load game config:', err))
+  }, [])
 
   // 同步agents状态到ref，确保Phaser初始化时能获取最新值
   useEffect(() => {
     agentsRef.current = agents
   }, [agents])
 
-  // 初始化 Phaser 游戏
+  // 初始化 Phaser 游戏（需等配置加载完成后）
   useEffect(() => {
-    if (currentPage !== 'chat') return
+    if (currentPage !== 'chat' || !gameConfig) return
 
     const gameContainer = document.getElementById('game-container')
     const width = gameContainer?.clientWidth || window.innerWidth
     const height = gameContainer?.clientHeight || window.innerHeight
 
-    const config: Phaser.Types.Core.GameConfig = {
+    const scene = new ChatScene(gameConfig)
+
+    const phaserConfig: Phaser.Types.Core.GameConfig = {
       type: Phaser.AUTO,
       width: width,
       height: height,
       parent: 'game-container',
       pixelArt: true,
       backgroundColor: '#e8e8e8',
-      scene: ChatScene,
+      scene: scene,
       physics: {
         default: 'arcade',
         arcade: { gravity: { x: 0, y: 0 } }
       }
     }
 
-    gameRef.current = new Phaser.Game(config)
+    gameRef.current = new Phaser.Game(phaserConfig)
 
     // 获取场景引用
     const checkScene = setInterval(() => {
-      const scene = gameRef.current?.scene.getScene('ChatScene') as ChatScene
-      if (scene) {
-        sceneRef.current = scene
+      const s = gameRef.current?.scene.getScene('ChatScene') as ChatScene
+      if (s) {
+        sceneRef.current = s
         console.log('ChatScene initialized, agents count:', agents.length)
         // 传递 agents 信息（使用最新的agents状态）
         const currentAgents = agentsRef.current
-        scene.setAgents(currentAgents)
+        s.setAgents(currentAgents)
         clearInterval(checkScene)
       }
     }, 100)
@@ -129,7 +141,7 @@ function App() {
       gameRef.current = null
       sceneRef.current = null
     }
-  }, [currentPage])
+  }, [currentPage, gameConfig])
 
   // 流式输出状态
   const [isChatCollapsed, setIsChatCollapsed] = useState(false)

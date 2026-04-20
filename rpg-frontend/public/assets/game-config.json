@@ -1,0 +1,138 @@
+{
+  "currentScene": "library",
+  "maxAgents": 10,
+  "scenes": {
+    "library": {
+      "key": "library",
+      "mapPath": "/assets/maps/library.tmj",
+      "tilesetName": "libassetpack-tiled",
+      "tilesetImagePath": "/assets/maps/libmap.png",
+      "tilesetImageKey": "libmap",
+      "layers": ["ground", "decorate", "items", "items2", "item3"],
+      "collisionLayer": "collisions"
+    }
+  },
+  "characters": {
+    "worker1": {
+      "key": "worker1",
+      "type": "spritesheet",
+      "spritesheets": {
+        "idle": {
+          "path": "/assets/characters/worker1_idle.png",
+          "frameWidth": 64,
+          "frameHeight": 128,
+          "frameRate": 6
+        },
+        "walk": {
+          "path": "/assets/characters/worker1_walking.png",
+          "frameWidth": 64,
+          "frameHeight": 128,
+          "frameRate": 10
+        }
+      },
+      "scale": 1.35,
+      "shadow": {
+        "offsetY": 58,
+        "width": 44,
+        "height": 14
+      },
+      "nameLabelOffsetY": -70,
+      "footprint": {
+        "width": 30,
+        "height": 12,
+        "offsetY": -12
+      }
+    },
+    "manager": {
+      "key": "manager",
+      "type": "spritesheet",
+      "fallbackKey": "manager_capitalist",
+      "spritesheets": {
+        "idle": {
+          "path": "/assets/characters/manager_idle.png",
+          "frameWidth": 48,
+          "frameHeight": 96,
+          "frameRate": 6
+        },
+        "walk": {
+          "path": "/assets/characters/manager_walking.png",
+          "frameWidth": 48,
+          "frameHeight": 96,
+          "frameRate": 10
+        }
+      },
+      "scale": 1.8,
+      "shadow": {
+        "offsetY": 58,
+        "width": 44,
+        "height": 14
+      },
+      "nameLabelOffsetY": -70,
+      "footprint": {
+        "width": 30,
+        "height": 12,
+        "offsetY": -12
+      }
+    },
+    "aiden": {
+      "key": "aiden",
+      "type": "fallback",
+      "fallbackKey": "aiden",
+      "scale": 1.35,
+      "shadow": {
+        "offsetY": 58,
+        "width": 44,
+        "height": 14
+      },
+      "nameLabelOffsetY": -70,
+      "footprint": {
+        "width": 30,
+        "height": 12,
+        "offsetY": -12
+      }
+    },
+    "wrench": {
+      "key": "wrench",
+      "type": "fallback",
+      "fallbackKey": "wrench",
+      "scale": 1.35,
+      "shadow": {
+        "offsetY": 58,
+        "width": 44,
+        "height": 14
+      },
+      "nameLabelOffsetY": -70,
+      "footprint": {
+        "width": 30,
+        "height": 12,
+        "offsetY": -12
+      }
+    }
+  },
+  "ui": {
+    "bubble": {
+      "width": 260,
+      "height": 90,
+      "arrowHeight": 14,
+      "paddingY": 14,
+      "offsetY": -125,
+      "textMaxLen": 50,
+      "charsPerLine": 18
+    },
+    "footprint": {
+      "width": 30,
+      "height": 12,
+      "offsetY": -12
+    },
+    "spawnMargin": {
+      "x": 120,
+      "y": 100
+    },
+    "moveSpeed": 6,
+    "selectionRing": {
+      "width": 50,
+      "height": 18,
+      "offsetY": 58
+    }
+  }
+}

@@ -1,15 +1,18 @@
 import { Scene } from 'phaser'
 import type { RobotStatus, AgentState, AgentInfo } from '../types'
+import type { GameConfig } from './config'
 
-// ========== 配置常量 ==========
+// ========== 代码生成纹理配置（回退用） ==========
 
-const MANAGER_CONFIG = {
+const MANAGER_FALLBACK_CONFIG = {
   texture: 'manager_capitalist',
   hatColor: 0x1a1a1a,
   suitColor: 0x2c2c2c,
   tieColor: 0x8b0000,
   shirtColor: 0xffffff
 }
+
+const DIRS = ['down', 'left', 'right', 'up'] as const
 
 export class ChatScene extends Scene {
   private npcs: Map<string, Phaser.GameObjects.Container> = new Map()
@@ -20,11 +23,10 @@ export class ChatScene extends Scene {
   private speechTimers: Map<string, Phaser.Time.TimerEvent> = new Map()
   private agents: AgentInfo[] = []
 
-  private readonly NPC_SCALE = 1.35
-  private readonly MAX_AGENTS = 10
-  private readonly MAP_WIDTH = 720
-  private readonly MAP_HEIGHT = 480
+  private config: GameConfig
   private sceneScale = 1
+  private mapWidth = 0
+  private mapHeight = 0
   private mapLayers: Phaser.Tilemaps.TilemapLayer[] = []
   private collisionRects: Array<{ x: number; y: number; width: number; height: number }> = []
 
@@ -34,14 +36,15 @@ export class ChatScene extends Scene {
   private selectionRing: Phaser.GameObjects.Ellipse | null = null
   private moveTweens: Map<string, Phaser.Tweens.Tween> = new Map()
 
-  constructor() {
+  constructor(config: GameConfig) {
     super({ key: 'ChatScene' })
+    this.config = config
   }
 
   // ========== 公共 API ==========
 
   setAgents(agents: AgentInfo[]) {
-    this.agents = agents.slice(0, this.MAX_AGENTS)
+    this.agents = agents.slice(0, this.config.maxAgents)
     if (this.children.length > 0) {
       this.recreateNPCs()
     }
@@ -73,19 +76,25 @@ export class ChatScene extends Scene {
   // ========== 生命周期 ==========
 
   preload() {
-    // Tiled 地图（tileset 已内嵌）
-    this.load.tilemapTiledJSON('library', '/assets/maps/library.tmj')
-    // 瓦片图片（被内嵌 tileset 引用）
-    this.load.image('libmap', '/assets/maps/libmap.png')
+    const sceneCfg = this.config.scenes[this.config.currentScene]
 
-    // 帧动画精灵图：4行(下/左/右/上) × N列
-    // worker: 单帧 64×128；idle: 512×512 → 4行 × 8列；walk: 640×512 → 4行 × 10列
-    this.load.spritesheet('worker1_idle', '/assets/characters/worker1_idle.png', { frameWidth: 64, frameHeight: 128 })
-    this.load.spritesheet('worker1_walk', '/assets/characters/worker1_walking.png', { frameWidth: 64, frameHeight: 128 })
+    // Tiled 地图
+    this.load.tilemapTiledJSON(sceneCfg.key, sceneCfg.mapPath)
+    this.load.image(sceneCfg.tilesetImageKey, sceneCfg.tilesetImagePath)
 
-    // manager: 单帧 48×96；idle/walk: 576×384 → 4行 × 12列
-    this.load.spritesheet('manager_idle', '/assets/characters/manager_idle.png', { frameWidth: 48, frameHeight: 96 })
-    this.load.spritesheet('manager_walk', '/assets/characters/manager_walking.png', { frameWidth: 48, frameHeight: 96 })
+    // 帧动画精灵图
+    Object.values(this.config.characters).forEach(char => {
+      if (char.type === 'spritesheet' && char.spritesheets) {
+        this.load.spritesheet(`${char.key}_idle`, char.spritesheets.idle.path, {
+          frameWidth: char.spritesheets.idle.frameWidth,
+          frameHeight: char.spritesheets.idle.frameHeight
+        })
+        this.load.spritesheet(`${char.key}_walk`, char.spritesheets.walk.path, {
+          frameWidth: char.spritesheets.walk.frameWidth,
+          frameHeight: char.spritesheets.walk.frameHeight
+        })
+      }
+    })
 
     // 代码生成纹理回退（角色 + 气泡）
     this.createPixelTexturesFallback()
@@ -109,8 +118,6 @@ export class ChatScene extends Scene {
 
     // 全局鼠标点击：点击空白处移动选中的 agent
     this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
-      // 如果点击到了交互对象（如 NPC body），不处理
-      // 因为 NPC body 的 pointerdown 会 stopPropagation
       if (this.selectedAgent) {
         this.onMapClick(pointer.x, pointer.y)
       }
@@ -126,41 +133,40 @@ export class ChatScene extends Scene {
     this.mapLayers.forEach(l => l.destroy())
     this.mapLayers = []
 
-    const map = this.make.tilemap({ key: 'library' })
+    const sceneCfg = this.config.scenes[this.config.currentScene]
+    const map = this.make.tilemap({ key: sceneCfg.key })
 
-    const tileset = map.addTilesetImage('libassetpack-tiled', 'libmap')
-    if (!tileset) {
-      console.error('Failed to add tileset')
-      return
+    // 先设置地图尺寸（不依赖 tileset 加载成功）
+    this.mapWidth = map.widthInPixels || 720
+    this.mapHeight = map.heightInPixels || 480
+
+    const tileset = map.addTilesetImage(sceneCfg.tilesetName, sceneCfg.tilesetImageKey)
+    if (tileset) {
+      this.sceneScale = Math.min(
+        this.cameras.main.width / this.mapWidth,
+        this.cameras.main.height / this.mapHeight
+      )
+
+      const layers = sceneCfg.layers.map(name => map.createLayer(name, tileset))
+
+      const scaledW = this.mapWidth * this.sceneScale
+      const scaledH = this.mapHeight * this.sceneScale
+      const offsetX = (this.cameras.main.width - scaledW) / 2
+      const offsetY = (this.cameras.main.height - scaledH) / 2
+
+      layers.forEach((layer, index) => {
+        if (!layer) return
+        layer.setPosition(offsetX, offsetY)
+        layer.setScale(this.sceneScale)
+        layer.setDepth(-10 + index * 5)
+        this.mapLayers.push(layer)
+      })
+    } else {
+      console.error('[tilemap] Failed to add tileset, map layers will not render')
     }
 
-    this.sceneScale = Math.min(
-      this.cameras.main.width / this.MAP_WIDTH,
-      this.cameras.main.height / this.MAP_HEIGHT
-    )
-
-    const layers = [
-      map.createLayer('ground', tileset),
-      map.createLayer('decorate', tileset),
-      map.createLayer('items', tileset),
-      map.createLayer('items2', tileset),
-      map.createLayer('item3', tileset),
-    ]
-
-    const scaledW = this.MAP_WIDTH * this.sceneScale
-    const scaledH = this.MAP_HEIGHT * this.sceneScale
-    const offsetX = (this.cameras.main.width - scaledW) / 2
-    const offsetY = (this.cameras.main.height - scaledH) / 2
-
-    layers.forEach((layer, index) => {
-      if (!layer) return
-      layer.setPosition(offsetX, offsetY)
-      layer.setScale(this.sceneScale)
-      layer.setDepth(-10 + index * 5)
-      this.mapLayers.push(layer)
-    })
-
-    const collisionLayer = map.getObjectLayer('collisions')
+    // 碰撞层独立于 tileset，始终尝试加载
+    const collisionLayer = map.getObjectLayer(sceneCfg.collisionLayer)
     if (collisionLayer) {
       this.collisionRects = collisionLayer.objects.map(obj => ({
         x: obj.x ?? 0,
@@ -168,7 +174,7 @@ export class ChatScene extends Scene {
         width: obj.width ?? 0,
         height: obj.height ?? 0,
       }))
-      console.log(`[collision] Loaded ${this.collisionRects.length} rects:`, this.collisionRects)
+      console.log(`[collision] Loaded ${this.collisionRects.length} rects`)
     } else {
       console.warn('[collision] No collisions layer found!')
       this.collisionRects = []
@@ -178,64 +184,47 @@ export class ChatScene extends Scene {
   // ========== 帧动画 ==========
 
   private createAnimations() {
-    const DIRS = ['down', 'left', 'right', 'up'] as const
+    Object.values(this.config.characters).forEach(char => {
+      if (char.type !== 'spritesheet' || !char.spritesheets) return
 
-    // worker1 idle: 4行 × 8列，单帧 64×128
-    if (this.textures.exists('worker1_idle')) {
-      const cols = 8
-      for (let row = 0; row < 4; row++) {
-        const dir = DIRS[row]
-        const start = row * cols
-        const frames = this.anims.generateFrameNumbers('worker1_idle', { start, end: start + cols - 1 })
-        if (!frames || frames.length === 0) continue
-        this.anims.create({ key: `worker1_idle_${dir}`, frames, frameRate: 6, repeat: -1 })
-        this.anims.create({ key: `worker1_thinking_${dir}`, frames, frameRate: 6, repeat: -1 })
-        this.anims.create({ key: `worker1_speaking_${dir}`, frames, frameRate: 8, repeat: -1 })
-      }
-    }
+      // idle / thinking / speaking 动画
+      const idleKey = `${char.key}_idle`
+      if (this.textures.exists(idleKey)) {
+        const texture = this.textures.get(idleKey)
+        const source = texture.getSourceImage() as HTMLImageElement
+        const cols = Math.floor(source.width / char.spritesheets.idle.frameWidth)
 
-    // worker1 walk: 4行 × 10列，单帧 64×128
-    if (this.textures.exists('worker1_walk')) {
-      const cols = 10
-      for (let row = 0; row < 4; row++) {
-        const dir = DIRS[row]
-        const start = row * cols
-        const frames = this.anims.generateFrameNumbers('worker1_walk', { start, end: start + cols - 1 })
-        if (!frames || frames.length === 0) continue
-        this.anims.create({ key: `worker1_walk_${dir}`, frames, frameRate: 10, repeat: -1 })
+        for (let row = 0; row < 4; row++) {
+          const dir = DIRS[row]
+          const start = row * cols
+          const frames = this.anims.generateFrameNumbers(idleKey, { start, end: start + cols - 1 })
+          if (!frames || frames.length === 0) continue
+          const rate = char.spritesheets.idle.frameRate
+          this.anims.create({ key: `${char.key}_idle_${dir}`, frames, frameRate: rate, repeat: -1 })
+          this.anims.create({ key: `${char.key}_thinking_${dir}`, frames, frameRate: rate, repeat: -1 })
+          this.anims.create({ key: `${char.key}_speaking_${dir}`, frames, frameRate: rate + 2, repeat: -1 })
+        }
       }
-    }
 
-    // manager idle: 4行 × 12列，单帧 48×96
-    if (this.textures.exists('manager_idle')) {
-      const cols = 12
-      for (let row = 0; row < 4; row++) {
-        const dir = DIRS[row]
-        const start = row * cols
-        const frames = this.anims.generateFrameNumbers('manager_idle', { start, end: start + cols - 1 })
-        if (!frames || frames.length === 0) continue
-        this.anims.create({ key: `manager_idle_${dir}`, frames, frameRate: 6, repeat: -1 })
-        this.anims.create({ key: `manager_thinking_${dir}`, frames, frameRate: 6, repeat: -1 })
-        this.anims.create({ key: `manager_speaking_${dir}`, frames, frameRate: 8, repeat: -1 })
-      }
-    }
+      // walk 动画
+      const walkKey = `${char.key}_walk`
+      if (this.textures.exists(walkKey)) {
+        const texture = this.textures.get(walkKey)
+        const source = texture.getSourceImage() as HTMLImageElement
+        const cols = Math.floor(source.width / char.spritesheets.walk.frameWidth)
 
-    // manager walk: 4行 × 12列，单帧 48×96
-    if (this.textures.exists('manager_walk')) {
-      const cols = 12
-      for (let row = 0; row < 4; row++) {
-        const dir = DIRS[row]
-        const start = row * cols
-        const frames = this.anims.generateFrameNumbers('manager_walk', { start, end: start + cols - 1 })
-        if (!frames || frames.length === 0) continue
-        this.anims.create({ key: `manager_walk_${dir}`, frames, frameRate: 10, repeat: -1 })
+        for (let row = 0; row < 4; row++) {
+          const dir = DIRS[row]
+          const start = row * cols
+          const frames = this.anims.generateFrameNumbers(walkKey, { start, end: start + cols - 1 })
+          if (!frames || frames.length === 0) continue
+          this.anims.create({ key: `${char.key}_walk_${dir}`, frames, frameRate: char.spritesheets.walk.frameRate, repeat: -1 })
+        }
       }
-    }
+    })
   }
 
   private getAnimKey(textureKey: string, state: string, direction?: string): string | null {
-    // Phaser 播放 walk 动画时会自动把 sprite.texture.key 切到 walk spritesheet，
-    // 所以 textureKey 可能是 'worker1_idle'、'worker1_walk'、'manager_idle'、'manager_walk'
     const baseKey = textureKey.replace('_idle', '').replace('_walk', '')
     const suffix = direction ? `_${direction}` : ''
     const key = `${baseKey}_${state}${suffix}`
@@ -260,11 +249,15 @@ export class ChatScene extends Scene {
   // ========== 碰撞检测 ==========
 
   private isFootprintColliding(mapX: number, mapY: number): boolean {
-    // NPC 底部 footprint（地图坐标）：宽 30，高 15，中心在 (mapX, mapY)
-    const footX = mapX - 15
-    const footY = mapY - 12
-    const footW = 30
-    const footH = 12
+    if (this.collisionRects.length === 0) {
+      // 无碰撞数据时默认放行，但打日志提示
+      return false
+    }
+    const fp = this.config.ui.footprint
+    const footX = mapX - fp.width / 2
+    const footY = mapY + fp.offsetY
+    const footW = fp.width
+    const footH = fp.height
     const colliding = this.collisionRects.some(r =>
       footX < r.x + r.width && footX + footW > r.x &&
       footY < r.y + r.height && footY + footH > r.y
@@ -280,15 +273,10 @@ export class ChatScene extends Scene {
 
     // 螺旋搜索：先左右，再上下，步长 10 像素
     for (let radius = 10; radius < 400; radius += 10) {
-      // 右
       if (!this.isFootprintColliding(mapX + radius, mapY)) return { x: mapX + radius, y: mapY }
-      // 左
       if (!this.isFootprintColliding(mapX - radius, mapY)) return { x: mapX - radius, y: mapY }
-      // 上
       if (!this.isFootprintColliding(mapX, mapY - radius)) return { x: mapX, y: mapY - radius }
-      // 下
       if (!this.isFootprintColliding(mapX, mapY + radius)) return { x: mapX, y: mapY + radius }
-      // 四个对角
       if (!this.isFootprintColliding(mapX + radius, mapY - radius)) return { x: mapX + radius, y: mapY - radius }
       if (!this.isFootprintColliding(mapX - radius, mapY - radius)) return { x: mapX - radius, y: mapY - radius }
       if (!this.isFootprintColliding(mapX + radius, mapY + radius)) return { x: mapX + radius, y: mapY + radius }
@@ -298,13 +286,11 @@ export class ChatScene extends Scene {
   }
 
   private findSafeRandomPos(): { x: number; y: number } {
-    // 中间区域随机生成，避免贴边
-    const marginX = 120
-    const marginY = 100
-    const minX = marginX
-    const maxX = this.MAP_WIDTH - marginX
-    const minY = marginY
-    const maxY = this.MAP_HEIGHT - marginY
+    const margin = this.config.ui.spawnMargin
+    const minX = margin.x
+    const maxX = this.mapWidth - margin.x
+    const minY = margin.y
+    const maxY = this.mapHeight - margin.y
 
     // 先随机尝试 30 次
     for (let i = 0; i < 30; i++) {
@@ -316,7 +302,7 @@ export class ChatScene extends Scene {
     }
 
     // fallback：从中心螺旋搜索
-    return this.findSafePos(this.MAP_WIDTH / 2, this.MAP_HEIGHT / 2)
+    return this.findSafePos(this.mapWidth / 2, this.mapHeight / 2)
   }
 
   // ========== NPC ==========
@@ -325,15 +311,16 @@ export class ChatScene extends Scene {
     const count = this.agents.length
     if (count === 0) return
 
-    const scaledW = this.MAP_WIDTH * this.sceneScale
-    const scaledH = this.MAP_HEIGHT * this.sceneScale
+    const scaledW = this.mapWidth * this.sceneScale
+    const scaledH = this.mapHeight * this.sceneScale
     const offsetX = (this.cameras.main.width - scaledW) / 2
     const offsetY = (this.cameras.main.height - scaledH) / 2
 
     this.agents.forEach((agent, index) => {
       let mapX: number, mapY: number
       const saved = this.agentMapPositions.get(agent.name)
-      if (saved) {
+      // 如果保存的位置在碰撞区域内，重新随机生成
+      if (saved && !this.isFootprintColliding(saved.x, saved.y)) {
         mapX = saved.x
         mapY = saved.y
       } else {
@@ -345,30 +332,40 @@ export class ChatScene extends Scene {
       const screenX = offsetX + mapX * this.sceneScale
       const screenY = offsetY + mapY * this.sceneScale
 
-      const isManager = agent.avatar_type === 'manager' || agent.id === 'manager_default'
-      const texture = this.resolveAgentTexture(agent.name, isManager)
+      const texture = this.resolveAgentTexture(agent)
+      const charKey = agent.avatar_type
 
-      this.createSingleNPC(agent.name, screenX, screenY, texture, index, mapX, mapY)
+      this.createSingleNPC(agent.name, screenX, screenY, texture, index, mapX, mapY, charKey)
     })
   }
 
-  private resolveAgentTexture(name: string, isManager: boolean): string {
-    if (isManager) {
-      if (this.textures.exists('manager_idle')) return 'manager_idle'
-      return MANAGER_CONFIG.texture
+  private resolveAgentTexture(agent: AgentInfo): string {
+    const charConfig = this.config.characters[agent.avatar_type]
+    if (!charConfig) {
+      return this.getAgentTextureByName(agent.name)
     }
-    if (this.textures.exists('worker1_idle')) return 'worker1_idle'
-    return this.getAgentTextureByName(name)
+
+    if (charConfig.type === 'spritesheet') {
+      const idleKey = `${charConfig.key}_idle`
+      if (this.textures.exists(idleKey)) return idleKey
+    }
+
+    if (charConfig.fallbackKey && this.textures.exists(charConfig.fallbackKey)) {
+      return charConfig.fallbackKey
+    }
+
+    return this.getAgentTextureByName(agent.name)
   }
 
-  private createSingleNPC(name: string, screenX: number, screenY: number, textureKey: string, index: number, mapX: number, mapY: number) {
+  private createSingleNPC(name: string, screenX: number, screenY: number, textureKey: string, index: number, mapX: number, mapY: number, charKey: string) {
     const npc = this.add.container(screenX, screenY)
 
-    const isManagerAnim = textureKey === 'manager_idle'
-    const bodyScale = isManagerAnim ? 1.8 : this.NPC_SCALE
+    const charConfig = this.config.characters[charKey]
+    const scale = charConfig?.scale ?? 1.35
+
     const body = this.add.sprite(0, 0, textureKey)
       .setOrigin(0.5, 0.5)
-      .setScale(bodyScale)
+      .setScale(scale)
       .setInteractive({ cursor: 'pointer' })
 
     // 点击 NPC 选中/取消选中，阻止事件冒泡到地图
@@ -383,10 +380,12 @@ export class ChatScene extends Scene {
       if (animKey) body.play(animKey)
     }
 
-    const shadow = this.add.ellipse(0, 58, 44, 14, 0x000000, 0.25)
+    const shadowCfg = charConfig?.shadow ?? this.config.ui.selectionRing
+    const shadow = this.add.ellipse(0, shadowCfg.offsetY, shadowCfg.width, shadowCfg.height, 0x000000, 0.25)
 
-    const nameBg = this.add.rectangle(0, -70, 80, 22, 0x000000, 0.6)
-    const nameLabel = this.add.text(0, -70, name, {
+    const nameOffsetY = charConfig?.nameLabelOffsetY ?? -70
+    const nameBg = this.add.rectangle(0, nameOffsetY, 80, 22, 0x000000, 0.6)
+    const nameLabel = this.add.text(0, nameOffsetY, name, {
       fontFamily: '"Noto Sans SC", sans-serif',
       fontSize: '12px',
       color: '#ffffff',
@@ -489,7 +488,6 @@ export class ChatScene extends Scene {
     const hasAnim = this.hasFrameAnim(body.texture.key)
     const dir = this.agentDirections.get(agentName) ?? 'down'
 
-
     switch (state) {
       case 'idle':
         if (hasAnim) {
@@ -541,8 +539,8 @@ export class ChatScene extends Scene {
   // ========== 移动与选中 ==========
 
   private screenToMap(screenX: number, screenY: number): { x: number; y: number } {
-    const scaledW = this.MAP_WIDTH * this.sceneScale
-    const scaledH = this.MAP_HEIGHT * this.sceneScale
+    const scaledW = this.mapWidth * this.sceneScale
+    const scaledH = this.mapHeight * this.sceneScale
     const offsetX = (this.cameras.main.width - scaledW) / 2
     const offsetY = (this.cameras.main.height - scaledH) / 2
     return {
@@ -552,8 +550,8 @@ export class ChatScene extends Scene {
   }
 
   private mapToScreen(mapX: number, mapY: number): { x: number; y: number } {
-    const scaledW = this.MAP_WIDTH * this.sceneScale
-    const scaledH = this.MAP_HEIGHT * this.sceneScale
+    const scaledW = this.mapWidth * this.sceneScale
+    const scaledH = this.mapHeight * this.sceneScale
     const offsetX = (this.cameras.main.width - scaledW) / 2
     const offsetY = (this.cameras.main.height - scaledH) / 2
     return {
@@ -564,12 +562,10 @@ export class ChatScene extends Scene {
 
   private onNPCClick(name: string) {
     if (this.selectedAgent === name) {
-      // 再次点击，取消选中
       this.selectedAgent = null
       this.selectionRing?.destroy()
       this.selectionRing = null
     } else {
-      // 选中新的（或首次选中），先取消旧的
       this.selectionRing?.destroy()
       this.selectionRing = null
       this.selectedAgent = name
@@ -582,7 +578,8 @@ export class ChatScene extends Scene {
     const npc = this.npcs.get(this.selectedAgent)
     if (!npc) return
 
-    this.selectionRing = this.add.ellipse(npc.x, npc.y + 58, 50, 18, 0xffd700, 0.6)
+    const ringCfg = this.config.ui.selectionRing
+    this.selectionRing = this.add.ellipse(npc.x, npc.y + ringCfg.offsetY, ringCfg.width, ringCfg.height, 0xffd700, 0.6)
       .setOrigin(0.5)
       .setStrokeStyle(2, 0xffa500)
       .setDepth(95)
@@ -594,7 +591,7 @@ export class ChatScene extends Scene {
     const targetMap = this.screenToMap(screenX, screenY)
 
     // 边界限制
-    if (targetMap.x < 0 || targetMap.x > this.MAP_WIDTH || targetMap.y < 0 || targetMap.y > this.MAP_HEIGHT) {
+    if (targetMap.x < 0 || targetMap.x > this.mapWidth || targetMap.y < 0 || targetMap.y > this.mapHeight) {
       return
     }
 
@@ -630,7 +627,7 @@ export class ChatScene extends Scene {
     this.transitionState(name, 'walking', direction)
 
     const targetScreen = this.mapToScreen(targetMapX, targetMapY)
-    const speed = distance * 6  // 约 6ms/像素，速度减半
+    const speed = distance * this.config.ui.moveSpeed
 
     // 用 proxy 对象作为 tween target，避免 killTweensOf(npc) 杀掉移动 tween
     const proxy = { x: npc.x, y: npc.y }
@@ -648,12 +645,13 @@ export class ChatScene extends Scene {
         const bubble = this.speechBubbles.get(name)
         if (bubble) {
           bubble.x = npc.x
-          bubble.y = npc.y - 125
+          bubble.y = npc.y + this.config.ui.bubble.offsetY
         }
         // 同步光圈
         if (this.selectionRing && this.selectedAgent === name) {
+          const ringCfg = this.config.ui.selectionRing
           this.selectionRing.x = npc.x
-          this.selectionRing.y = npc.y + 58
+          this.selectionRing.y = npc.y + ringCfg.offsetY
         }
       },
       onComplete: () => {
@@ -661,7 +659,6 @@ export class ChatScene extends Scene {
         this.moveTweens.delete(name)
 
         // 移动完成：直接恢复 idle 动画，不经过 transitionState
-        // 避免 clearAgentEffects 中 killTweensOf 的潜在副作用
         this.agentStates.set(name, 'idle')
         const body = npc.getAt(1) as Phaser.GameObjects.Sprite
         const dir = this.agentDirections.get(name) ?? 'down'
@@ -669,7 +666,6 @@ export class ChatScene extends Scene {
         if (idleAnimKey) {
           body.play(idleAnimKey)
         }
-        // 无帧动画角色启动 idle 浮动
         if (!this.hasFrameAnim(body.texture.key)) {
           this.startIdleAnimation(name)
         }
@@ -697,8 +693,9 @@ export class ChatScene extends Scene {
   // ========== 气泡 ==========
 
   private createSpeechBubbles() {
+    const bubbleCfg = this.config.ui.bubble
     this.npcs.forEach((npc, name) => {
-      const bubble = this.add.container(npc.x, npc.y - 125)
+      const bubble = this.add.container(npc.x, npc.y + bubbleCfg.offsetY)
       bubble.setVisible(false)
       bubble.setScale(0)
 
@@ -728,16 +725,13 @@ export class ChatScene extends Scene {
       const textObj = bubble.getData('text') as Phaser.GameObjects.Text
       textObj.setText(text)
 
-      // 取消气泡上任何正在运行的 tween（防止旧的 hide 动画把气泡缩没）
       this.tweens.killTweensOf(bubble)
 
       if (bubble.visible) {
-        // 已经在显示（或正在入场/退场中），只更新文本并确保缩放到正常大小
         bubble.setScale(1)
         return
       }
 
-      // 首次显示，播放入场动画
       bubble.setVisible(true)
       bubble.setScale(0)
       this.tweens.add({
@@ -756,7 +750,6 @@ export class ChatScene extends Scene {
 
     targetBubbles.forEach(bubble => {
       if (!bubble || !bubble.visible) return
-      // 取消可能正在运行的入场/更新 tween，避免冲突
       this.tweens.killTweensOf(bubble)
       this.tweens.add({
         targets: bubble,
@@ -792,14 +785,11 @@ export class ChatScene extends Scene {
   }
 
   showNPCDialog(text: string, agentName?: string, onComplete?: () => void) {
-    const MAX_LEN = 50
-    const CHARS_PER_LINE = 18
-    // 去掉换行，紧凑成纯文本
+    const bubbleCfg = this.config.ui.bubble
     const compact = text.replace(/\r?\n/g, '')
-    const truncated = compact.length > MAX_LEN ? compact.slice(0, MAX_LEN) + '...' : compact
-    const displayText = this.wrapTextByChars(truncated, CHARS_PER_LINE)
+    const truncated = compact.length > bubbleCfg.textMaxLen ? compact.slice(0, bubbleCfg.textMaxLen) + '...' : compact
+    const displayText = this.wrapTextByChars(truncated, bubbleCfg.charsPerLine)
 
-    // 清除该角色之前的隐藏定时器
     const oldTimer = agentName ? this.speechTimers.get(agentName) : null
     if (oldTimer) {
       oldTimer.remove()
@@ -851,15 +841,16 @@ export class ChatScene extends Scene {
     this.createWrenchTexture()
     this.createManagerTexture()
 
-    const bubbleGraphics = this.make.graphics({ x: 0, y: 0 })
-    const BW = 260
-    const BH = 90
-    const arrowH = 14
-    const padY = 14
+    const bubbleCfg = this.config.ui.bubble
+    const BW = bubbleCfg.width
+    const BH = bubbleCfg.height
+    const arrowH = bubbleCfg.arrowHeight
+    const padY = bubbleCfg.paddingY
     const totalH = BH + arrowH + padY
     const tipX = BW / 2
     const tipY = padY + BH
-    // 圆角矩形在纹理中垂直居中，中心与纹理中心对齐
+
+    const bubbleGraphics = this.make.graphics({ x: 0, y: 0 })
     bubbleGraphics.fillStyle(0xffffff)
     bubbleGraphics.fillRoundedRect(0, padY, BW, BH, 12)
     bubbleGraphics.lineStyle(2, 0x2d3436)
@@ -989,7 +980,7 @@ export class ChatScene extends Scene {
   }
 
   private createManagerTexture() {
-    const { hatColor, suitColor, tieColor, shirtColor } = MANAGER_CONFIG
+    const { hatColor, suitColor, tieColor, shirtColor } = MANAGER_FALLBACK_CONFIG
     const graphics = this.make.graphics({ x: 0, y: 0 })
     graphics.fillStyle(hatColor)
     graphics.fillRect(4, 8, 40, 6)
@@ -1035,6 +1026,6 @@ export class ChatScene extends Scene {
     graphics.fillRect(40, 52, 6, 6)
     graphics.fillStyle(0xffffff)
     graphics.fillRect(32, 42, 4, 3)
-    graphics.generateTexture(MANAGER_CONFIG.texture, 48, 60)
+    graphics.generateTexture(MANAGER_FALLBACK_CONFIG.texture, 48, 60)
   }
 }
