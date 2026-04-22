@@ -75,7 +75,8 @@ class ToolRegistry:
 
     def _load_builtin_tools(self):
         """加载内置工具"""
-        from .builtin import file_io, browser_control
+        from .builtin import file_io, browser_control, shell, file_search
+        from .builtin import get_current_time, desktop_screenshot, send_file
 
         # 注册文件操作工具（使用配置中的启用状态，默认为True）
         self.register_tool("read_file", file_io.read_file,
@@ -90,6 +91,30 @@ class ToolRegistry:
         # 注册浏览器工具
         self.register_tool("browser_use", browser_control.browser_use,
                           enabled=self._tools_config.get('browser_use', True))
+
+        # 注册 shell 工具
+        self.register_tool("execute_shell_command", shell.execute_shell_command,
+                          enabled=self._tools_config.get('execute_shell_command', True))
+
+        # 注册文件搜索工具
+        self.register_tool("grep_search", file_search.grep_search,
+                          enabled=self._tools_config.get('grep_search', True))
+        self.register_tool("glob_search", file_search.glob_search,
+                          enabled=self._tools_config.get('glob_search', True))
+
+        # 注册时间工具
+        self.register_tool("get_current_time", get_current_time.get_current_time,
+                          enabled=self._tools_config.get('get_current_time', True))
+        self.register_tool("set_user_timezone", get_current_time.set_user_timezone,
+                          enabled=self._tools_config.get('set_user_timezone', True))
+
+        # 注册截图工具
+        self.register_tool("desktop_screenshot", desktop_screenshot.desktop_screenshot,
+                          enabled=self._tools_config.get('desktop_screenshot', True))
+
+        # 注册文件发送工具
+        self.register_tool("send_file_to_user", send_file.send_file_to_user,
+                          enabled=self._tools_config.get('send_file_to_user', True))
 
         logger.info(f"✅ 已注册 {len(self._toolkit.tools)} 个工具")
 
@@ -141,7 +166,12 @@ class ToolRegistry:
 
         # 如果配置为空，返回默认工具列表
         if not all_tools:
-            return ["read_file", "write_file", "edit_file", "append_file", "browser_use"]
+            return [
+                "read_file", "write_file", "edit_file", "append_file",
+                "browser_use", "execute_shell_command", "grep_search",
+                "glob_search", "get_current_time", "set_user_timezone",
+                "desktop_screenshot", "send_file_to_user",
+            ]
 
         return sorted(list(all_tools))
 
@@ -169,7 +199,8 @@ class ToolRegistry:
 
     def _re_register_tool(self, name: str):
         """重新注册工具到 Toolkit"""
-        from .builtin import file_io, browser_control
+        from .builtin import file_io, browser_control, shell, file_search
+        from .builtin import get_current_time, desktop_screenshot, send_file
 
         tool_map = {
             "read_file": file_io.read_file,
@@ -177,6 +208,13 @@ class ToolRegistry:
             "edit_file": file_io.edit_file,
             "append_file": file_io.append_file,
             "browser_use": browser_control.browser_use,
+            "execute_shell_command": shell.execute_shell_command,
+            "grep_search": file_search.grep_search,
+            "glob_search": file_search.glob_search,
+            "get_current_time": get_current_time.get_current_time,
+            "set_user_timezone": get_current_time.set_user_timezone,
+            "desktop_screenshot": desktop_screenshot.desktop_screenshot,
+            "send_file_to_user": send_file.send_file_to_user,
         }
 
         if name in tool_map:
