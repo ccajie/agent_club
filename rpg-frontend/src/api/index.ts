@@ -16,6 +16,7 @@ import type {
   ManagerConfig,
   Skill,
 } from '../types'
+import type { GameConfig } from '../game/config'
 
 // 自动检测环境：开发模式使用代理，生产模式使用相对路径
 const isDev = import.meta.env.DEV
@@ -295,6 +296,26 @@ export const api = {
   // 测试 Manager 连接
   async testManagerConnection(): Promise<TestConnectionResponse> {
     const response = await client.post<TestConnectionResponse>('/manager/test')
+    return response.data
+  },
+
+  // ========== 游戏配置 API ==========
+
+  // 获取游戏配置
+  async getGameConfig(): Promise<GameConfig> {
+    const response = await client.get<GameConfig>('/game-config')
+    return response.data
+  },
+
+  // 更新游戏配置（全量）
+  async updateGameConfig(config: GameConfig): Promise<GameConfig> {
+    const response = await client.put<GameConfig>('/game-config', config)
+    return response.data
+  },
+
+  // 更新当前场景
+  async updateCurrentScene(currentScene: string): Promise<GameConfig> {
+    const response = await client.put<GameConfig>('/game-config/current-scene', { currentScene })
     return response.data
   },
 }

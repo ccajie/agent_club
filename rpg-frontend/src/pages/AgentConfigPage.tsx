@@ -1,11 +1,13 @@
 import { useState, useEffect } from 'react'
 import type { AgentConfig, Provider, Skill } from '../types'
+import type { GameConfig } from '../game/config'
 import { api } from '../api'
 
 interface AgentFormData {
   name: string
   role: string
   personality: string
+  avatar_type: string
   provider_id: string
   specialty: string
   expertise: string
@@ -16,6 +18,7 @@ interface ManagerFormData {
   name: string
   role: string
   personality: string
+  avatar_type: string
   provider_id: string
   is_active: boolean
 }
@@ -24,6 +27,7 @@ const initialAgentFormData: AgentFormData = {
   name: '',
   role: '',
   personality: '',
+  avatar_type: 'worker1',
   provider_id: '',
   specialty: '',
   expertise: '',
@@ -34,6 +38,7 @@ const initialManagerFormData: ManagerFormData = {
   name: '任务管理器',
   role: '项目协调经理',
   personality: '专业、有条理、善于规划和协调，能够准确分析需求并合理分配任务',
+  avatar_type: 'manager',
   provider_id: '',
   is_active: false,
 }
@@ -52,9 +57,11 @@ export const AgentConfigPage = () => {
   const [saving, setSaving] = useState(false)
   const [reinitializing, setReinitializing] = useState(false)
   const [testingManager, setTestingManager] = useState(false)
+  const [gameConfig, setGameConfig] = useState<GameConfig | null>(null)
 
   useEffect(() => {
     loadData()
+    api.getGameConfig().then(setGameConfig).catch(() => {})
   }, [])
 
   const loadData = async () => {
@@ -76,6 +83,7 @@ export const AgentConfigPage = () => {
           name: managerAgent.name,
           role: managerAgent.role,
           personality: managerAgent.personality,
+          avatar_type: managerAgent.avatar_type || 'manager',
           provider_id: managerAgent.provider_id || '',
           is_active: managerAgent.is_active,
         })
@@ -127,6 +135,7 @@ export const AgentConfigPage = () => {
       name: agent.name,
       role: agent.role,
       personality: agent.personality,
+      avatar_type: agent.avatar_type || 'worker1',
       provider_id: agent.provider_id,
       specialty: agent.specialty || '',
       expertise: agent.expertise || '',
@@ -141,6 +150,7 @@ export const AgentConfigPage = () => {
         name: manager.name,
         role: manager.role,
         personality: manager.personality,
+        avatar_type: manager.avatar_type || 'manager',
         provider_id: manager.provider_id || '',
         is_active: manager.is_active,
       })
@@ -168,6 +178,7 @@ export const AgentConfigPage = () => {
       name: agentFormData.name,
       role: agentFormData.role,
       personality: agentFormData.personality,
+      avatar_type: agentFormData.avatar_type,
       provider_id: agentFormData.provider_id,
       specialty: agentFormData.specialty,
       expertise: agentFormData.expertise,
@@ -218,6 +229,7 @@ export const AgentConfigPage = () => {
         name: managerFormData.name,
         role: managerFormData.role,
         personality: managerFormData.personality,
+        avatar_type: managerFormData.avatar_type,
         provider_id: managerFormData.provider_id,
         is_active: managerFormData.is_active,
       })
@@ -375,6 +387,9 @@ export const AgentConfigPage = () => {
               <div className="provider-meta">
                 <span>性格: {manager.personality.slice(0, 30)}...</span>
               </div>
+              <div className="provider-meta" style={{ marginTop: '4px' }}>
+                🎨 形象: {manager.avatar_type || '未设置'}
+              </div>
               <div className="provider-meta" style={{ marginTop: '4px', color: '#00b894' }}>
                 {manager.is_active
                   ? '✅ 启用后 Manager 将作为任务协调者，自动分派任务给 Workers'
@@ -439,6 +454,9 @@ export const AgentConfigPage = () => {
                   </div>
                   <div className="provider-meta">
                     <span>性格: {agent.personality.slice(0, 30)}...</span>
+                  </div>
+                  <div className="provider-meta" style={{ marginTop: '4px' }}>
+                    🎨 形象: {agent.avatar_type || '未设置'}
                   </div>
                   {agent.specialty && (
                     <div className="provider-meta" style={{ marginTop: '4px' }}>
@@ -539,6 +557,23 @@ export const AgentConfigPage = () => {
                       resize: 'vertical',
                     }}
                   />
+                </div>
+
+                <div className="form-group">
+                  <label>形象 *</label>
+                  <select
+                    value={agentFormData.avatar_type}
+                    onChange={e => setAgentFormData({ ...agentFormData, avatar_type: e.target.value })}
+                  >
+                    {gameConfig
+                      ? Object.entries(gameConfig.characters).map(([key, char]) => (
+                          <option key={key} value={key}>
+                            {key} ({char.type === 'spritesheet' ? '帧动画' : '代码生成'})
+                          </option>
+                        ))
+                      : <option value="worker1">worker1</option>}
+                  </select>
+                  <span className="hint">选择 Agent 在游戏场景中的外观形象</span>
                 </div>
               </div>
 
@@ -817,6 +852,23 @@ export const AgentConfigPage = () => {
                       resize: 'vertical',
                     }}
                   />
+                </div>
+
+                <div className="form-group">
+                  <label>形象 *</label>
+                  <select
+                    value={managerFormData.avatar_type}
+                    onChange={e => setManagerFormData({ ...managerFormData, avatar_type: e.target.value })}
+                  >
+                    {gameConfig
+                      ? Object.entries(gameConfig.characters).map(([key, char]) => (
+                          <option key={key} value={key}>
+                            {key} ({char.type === 'spritesheet' ? '帧动画' : '代码生成'})
+                          </option>
+                        ))
+                      : <option value="manager">manager</option>}
+                  </select>
+                  <span className="hint">选择 Manager 在游戏场景中的外观形象</span>
                 </div>
               </div>
 

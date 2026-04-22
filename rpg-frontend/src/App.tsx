@@ -6,11 +6,12 @@ import { AgentConfigPage } from './pages/AgentConfigPage'
 import { ProviderConfigPage } from './pages/ProviderConfigPage'
 import { ToolConfigPage } from './pages/ToolConfigPage'
 import { SkillConfigPage } from './pages/SkillConfigPage'
+import { SceneSelectPage } from './pages/SceneSelectPage'
 import type { ChatMessage, RobotStatus, AgentInfo } from './types'
 import type { GameConfig } from './game/config'
 import { api } from './api'
 
-type Page = 'chat' | 'agents' | 'providers' | 'tools' | 'skills'
+type Page = 'chat' | 'agents' | 'providers' | 'tools' | 'skills' | 'scenes'
 
 // 图标组件
 const ChatIcon = () => (
@@ -47,6 +48,14 @@ const SkillIcon = () => (
   </svg>
 )
 
+const SceneIcon = () => (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+    <circle cx="8.5" cy="8.5" r="1.5"/>
+    <polyline points="21 15 16 10 5 21"/>
+  </svg>
+)
+
 // 收起图标（向下箭头）
 const CollapseIcon = () => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -75,9 +84,8 @@ function App() {
 
   // 加载游戏配置
   useEffect(() => {
-    fetch('/assets/game-config.json')
-      .then(r => r.json())
-      .then((cfg: GameConfig) => setGameConfig(cfg))
+    api.getGameConfig()
+      .then(cfg => setGameConfig(cfg))
       .catch(err => console.error('Failed to load game config:', err))
   }, [])
 
@@ -396,6 +404,13 @@ function App() {
             <SkillIcon />
             <span>技能管理</span>
           </button>
+          <button
+            className={`nav-item ${currentPage === 'scenes' ? 'active' : ''}`}
+            onClick={() => setCurrentPage('scenes')}
+          >
+            <SceneIcon />
+            <span>场景切换</span>
+          </button>
         </div>
       </nav>
 
@@ -498,6 +513,16 @@ function App() {
         {currentPage === 'providers' && <ProviderConfigPage />}
         {currentPage === 'tools' && <ToolConfigPage />}
         {currentPage === 'skills' && <SkillConfigPage />}
+        {currentPage === 'scenes' && gameConfig && (
+          <SceneSelectPage
+            config={gameConfig}
+            onSceneChange={(newConfig) => {
+              setGameConfig(newConfig)
+              // 切回聊天页自动重建场景
+              setCurrentPage('chat')
+            }}
+          />
+        )}
       </main>
     </div>
   )

@@ -33,6 +33,7 @@ from api.providers_api import router as providers_router
 from api.tools_api import router as tools_router
 from api.manager_api import router as manager_router
 from api.skills_api import router as skills_router
+from api.game_config_api import router as game_config_router
 from skills import skill_registry
 
 # ============== 全局状态 ==============
@@ -345,6 +346,9 @@ app.include_router(manager_router)
 
 # 添加 Skill 管理路由
 app.include_router(skills_router)
+
+# 添加游戏配置路由
+app.include_router(game_config_router)
 
 
 # ============== API 端点 ==============

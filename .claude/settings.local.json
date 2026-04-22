@@ -10,7 +10,8 @@
       "Bash(pip list *)",
       "Bash(npx vite *)",
       "Bash(file *)",
-      "Bash(./node_modules/.bin/tsc --noEmit)"
+      "Bash(./node_modules/.bin/tsc --noEmit)",
+      "Bash(grep -E \"\\\\.\\(ts|js|json\\)$\")"
     ]
   }
 }

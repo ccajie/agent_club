@@ -25,7 +25,7 @@ export interface AgentInfo {
 
 // ========== Agent 配置类型（每个 Agent 独立配置） ==========
 
-export type AvatarType = 'aiden' | 'wrench'
+export type AvatarType = string
 
 export interface Provider {
   id: string
