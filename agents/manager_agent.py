@@ -456,7 +456,8 @@ class ManagerAgent(AgentBase):
         if any(kw in agent_name for kw in ["前端", "后端", "开发", "程序"]):
             if step.get("depends_on"):
                 file_notes.append("【文档读取】上游步骤的文档可能保存在 output/doc/ 目录，请先搜索并读取相关文件后再开始开发。")
-            file_notes.append("【代码保存】代码文件请保存到 output/ 目录下。")
+            file_notes.append("【代码保存】代码文件请保存到 output/preview/ 目录下。")
+            file_notes.append("【禁止预览】完成开发后，只需将 HTML 文件保存到指定目录即可，不需要打开浏览器预览、截图或发送文件给用户。")
         file_instruction = "\n".join(file_notes)
 
         # 构建精简的任务消息
@@ -491,12 +492,15 @@ class ManagerAgent(AgentBase):
             role="user"
         )
 
+        # 根据任务类型设置超时：开发类任务给10分钟，其他2分钟
+        timeout_seconds = 600.0 if any(kw in agent_name for kw in ["前端", "后端", "开发", "程序"]) else 120.0
+
         try:
             # 调用Worker，添加超时保护
-            print(f"      ⏳ 等待 {agent_name} 执行...")
+            print(f"      ⏳ 等待 {agent_name} 执行（超时 {int(timeout_seconds)} 秒）...")
             response = await asyncio.wait_for(
                 worker.reply(task_msg),
-                timeout=120.0,
+                timeout=timeout_seconds,
             )
 
             # Manager 统一提取摘要
@@ -529,6 +533,19 @@ class ManagerAgent(AgentBase):
                 task=task_description
             )
 
+        except asyncio.TimeoutError:
+            print(f"      ❌ {agent_name} 执行超时（{int(timeout_seconds)} 秒）")
+            task_plan.results[step["step_id"]] = {
+                "status": "failed",
+                "agent": agent_name,
+                "error": f"执行超时（{int(timeout_seconds)} 秒），任务未完成"
+            }
+            self._emit("worker_done",
+                agent_name=agent_name,
+                result=f"执行超时（{int(timeout_seconds)} 秒）",
+                task=task_description,
+                failed=True
+            )
         except Exception as e:
             print(f"      ❌ {agent_name} 执行失败: {e}")
             task_plan.results[step["step_id"]] = {
@@ -542,6 +559,13 @@ class ManagerAgent(AgentBase):
                 task=task_description,
                 failed=True
             )
+        finally:
+            # 清空 Worker 的独立 memory，避免上下文累积影响后续任务
+            if worker._agent and hasattr(worker._agent, 'react_agent') and worker._agent.react_agent:
+                from agentscope.memory import InMemoryMemory
+                from agents.chat_agent import _MediaFilteringMemory
+                worker._agent.react_agent.memory = _MediaFilteringMemory(InMemoryMemory())
+                print(f"      🧹 [{agent_name}] 已清空对话上下文")
 
     async def _integrate_results(self, task_plan: TaskPlan) -> str:
         """整合所有Worker的结果（使用摘要而非原始内容）"""
