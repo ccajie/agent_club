@@ -7,11 +7,12 @@ import { ProviderConfigPage } from './pages/ProviderConfigPage'
 import { ToolConfigPage } from './pages/ToolConfigPage'
 import { SkillConfigPage } from './pages/SkillConfigPage'
 import { SceneSelectPage } from './pages/SceneSelectPage'
+import { HtmlPreviewPage } from './pages/HtmlPreviewPage'
 import type { ChatMessage, RobotStatus, AgentInfo } from './types'
 import type { GameConfig } from './game/config'
 import { api } from './api'
 
-type Page = 'chat' | 'agents' | 'providers' | 'tools' | 'skills' | 'scenes'
+type Page = 'chat' | 'agents' | 'providers' | 'tools' | 'skills' | 'scenes' | 'preview'
 
 // 图标组件
 const ChatIcon = () => (
@@ -53,6 +54,15 @@ const SceneIcon = () => (
     <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
     <circle cx="8.5" cy="8.5" r="1.5"/>
     <polyline points="21 15 16 10 5 21"/>
+  </svg>
+)
+
+const PreviewIcon = () => (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="2" y="3" width="20" height="14" rx="2" ry="2"/>
+    <line x1="8" y1="21" x2="16" y2="21"/>
+    <line x1="12" y1="17" x2="12" y2="21"/>
+    <circle cx="12" cy="10" r="3"/>
   </svg>
 )
 
@@ -221,7 +231,7 @@ function App() {
     const streamingContents = new Map<string, string>() // agentName -> accumulated content
 
     // 开始流式请求
-    const cancelStream = api.chatStream(
+    api.chatStream(
       text,
       (chunk) => {
         console.log('📦 收到流式数据:', chunk.type, chunk.agent_name, chunk.content?.slice(0, 20))
@@ -411,6 +421,13 @@ function App() {
             <SceneIcon />
             <span>场景切换</span>
           </button>
+          <button
+            className={`nav-item ${currentPage === 'preview' ? 'active' : ''}`}
+            onClick={() => setCurrentPage('preview')}
+          >
+            <PreviewIcon />
+            <span>网页预览</span>
+          </button>
         </div>
       </nav>
 
@@ -523,6 +540,7 @@ function App() {
             }}
           />
         )}
+        {currentPage === 'preview' && <HtmlPreviewPage />}
       </main>
     </div>
   )

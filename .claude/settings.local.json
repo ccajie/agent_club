@@ -11,7 +11,26 @@
       "Bash(npx vite *)",
       "Bash(file *)",
       "Bash(./node_modules/.bin/tsc --noEmit)",
-      "Bash(grep -E \"\\\\.\\(ts|js|json\\)$\")"
+      "Bash(grep -E \"\\\\.\\(ts|js|json\\)$\")",
+      "Bash(grep -E \"\\\\.\\(py|md|txt|json|yaml\\)$\")",
+      "Bash(grep -v \"-en\\\\|-zh\")",
+      "Bash(npm run *)",
+      "Bash(curl -s http://localhost:8000/api/html-preview)",
+      "Bash(CLAUDECODE= lsof -i :8000)",
+      "Bash(echo \"PID: $!\")",
+      "Bash(CLAUDECODE= find /Users/zeruili/projects/copaw -type f -name \"*.py\")",
+      "Bash(env -u CLAUDECODE find /Users/zeruili/projects/copaw -type f -name \"*.py\")",
+      "Bash(env -u CLAUDECODE find /Users/zeruili/projects/copaw/src -type f -name \"*.py\")",
+      "Bash(env -u CLAUDECODE grep -rn \"stream\" /Users/zeruili/projects/copaw/src/qwenpaw/agents/)",
+      "Bash(env -u CLAUDECODE grep -rn \"stream\" /Users/zeruili/projects/copaw/src/qwenpaw/providers/)",
+      "Bash(env *)",
+      "Bash(bash *)",
+      "Bash(python -c \"import agentscope; print\\(agentscope.__file__\\)\" 2>/dev/null || pip show agentscope 2>/dev/null | grep Location)",
+      "Bash(pip show agentscope | grep Version)",
+      "Bash(pip index versions agentscope 2>/dev/null || echo \"pip index not available\"; pip show agentscope | grep -i version)",
+      "Bash(grep -n \"class InMemoryMemory\" /Users/zeruili/projects/test_rag_agent/.venv/lib/python3.10/site-packages/agentscope/memory/*.py)",
+      "Bash(python -c \"\nfrom agentscope.message import Msg, ToolResultBlock, ImageBlock, TextBlock\n\nmsg = Msg\\('system', [\n    ToolResultBlock\\(type='tool_result', id='x', name='send_file_to_user', output=[\n        ImageBlock\\(type='image', source={'type': 'url', 'url': 'file:///test.png'}\\),\n        TextBlock\\(type='text', text='Image file sent'\\),\n    ]\\)\n], 'system'\\)\n\nprint\\('content type:', type\\(msg.content\\)\\)\nprint\\('content:', msg.content\\)\nprint\\('get_content_blocks:', msg.get_content_blocks\\(\\)\\)\nfor b in msg.get_content_blocks\\(\\):\n    print\\('  block type:', b.get\\('type'\\)\\)\n    if b.get\\('type'\\) == 'tool_result':\n        print\\('    output:', b.get\\('output'\\)\\)\n        for ob in b.get\\('output', []\\):\n            print\\('      ob type:', ob.get\\('type'\\)\\)\n\")",
+      "Bash(python -c \"\nimport asyncio\nfrom api.html_preview_api import list_html_files, get_html_content, preview_html\nfrom fastapi import HTTPException\n\n# Test list files\nresult = asyncio.run\\(list_html_files\\(\\)\\)\nprint\\('Files found:', len\\(result.files\\)\\)\nfor f in result.files:\n    print\\(f'  {f.filename} \\({f.size} bytes\\)'\\)\n\n# Test get content\ntry:\n    content = asyncio.run\\(get_html_content\\('calculator/index.html'\\)\\)\n    print\\(f'Content of calculator/index.html: {content[\\\\\"content\\\\\"][:50]}...'\\)\nexcept HTTPException as e:\n    print\\(f'Error: {e.detail}'\\)\n\n# Test preview\ntry:\n    resp = asyncio.run\\(preview_html\\('calculator/index.html'\\)\\)\n    print\\(f'Preview body: {resp.body[:50]}...'\\)\nexcept HTTPException as e:\n    print\\(f'Error: {e.detail}'\\)\n\")"
     ]
   }
 }

@@ -34,6 +34,7 @@ from api.tools_api import router as tools_router
 from api.manager_api import router as manager_router
 from api.skills_api import router as skills_router
 from api.game_config_api import router as game_config_router
+from api.html_preview_api import router as html_preview_router
 from skills import skill_registry
 
 # ============== 全局状态 ==============
@@ -349,6 +350,9 @@ app.include_router(skills_router)
 
 # 添加游戏配置路由
 app.include_router(game_config_router)
+
+# 添加 HTML 预览路由
+app.include_router(html_preview_router)
 
 
 # ============== API 端点 ==============
@@ -734,7 +738,7 @@ def setup_static_files():
 
         @app.get("/{full_path:path}")
         async def serve_spa(full_path: str):
-            if full_path.startswith("api/"):
+            if full_path.startswith("api/") or full_path.startswith("preview/"):
                 raise HTTPException(status_code=404, detail="Not Found")
 
             index_file = os.path.join(dist_dir, "index.html")

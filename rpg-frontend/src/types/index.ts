@@ -9,6 +9,7 @@ export interface ChatMessage {
   content: string
   timestamp: number
   isError?: boolean
+  isStreaming?: boolean
   agentName?: string  // 哪个 Agent 发的消息
   agentRole?: string  // Agent 角色
 }
@@ -261,5 +262,29 @@ export interface ToolsBatchUpdateRequest {
 
 export interface ToolUpdateResponse {
   success: boolean
+  message: string
+}
+
+// ========== HTML Preview 类型 ==========
+
+export interface HtmlFileInfo {
+  filename: string
+  size: number
+  created_at: number
+  updated_at: number
+}
+
+export interface HtmlPreviewListResponse {
+  files: HtmlFileInfo[]
+}
+
+export interface SaveHtmlRequest {
+  filename: string
+  content: string
+}
+
+export interface SaveHtmlResponse {
+  success: boolean
+  filename: string
   message: string
 }

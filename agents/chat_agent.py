@@ -4,12 +4,91 @@
 """
 from typing import Optional, Dict, Any, List
 from agentscope.agent import AgentBase
-from agentscope.message import Msg
+from agentscope.message import Msg, TextBlock
+from agentscope.memory import InMemoryMemory
 from agentscope.model import DashScopeChatModel, OpenAIChatModel, AnthropicChatModel
 from agentscope.agent import ReActAgent
 from agentscope.formatter import OpenAIChatFormatter
 
 from tools import get_toolkit
+
+
+class _MediaFilteringMemory:
+    """包装 InMemoryMemory，过滤掉 image/audio/video block，替换为文本描述。
+
+    某些模型 API（如 kimi 通过 Anthropic 兼容接口）不支持 file:// 格式的
+    本地图片 URL。当 tool_result 中包含 ImageBlock 时，会导致 API 400 错误。
+    此包装器在消息进入 memory 前将媒体 block 替换为文本引用，避免 API 报错。
+    """
+
+    def __init__(self, wrapped):
+        self._wrapped = wrapped
+
+    async def add(self, memories, marks=None, **kwargs):
+        if memories is None:
+            return
+        if isinstance(memories, Msg):
+            memories = self._filter_msg(memories)
+        elif isinstance(memories, list):
+            memories = [self._filter_msg(m) for m in memories if m is not None]
+        await self._wrapped.add(memories, marks=marks, **kwargs)
+
+    def _filter_block(self, block):
+        """递归过滤单个 content block，处理嵌套在 tool_result output 中的媒体。"""
+        typ = block.get("type")
+        if typ == "image":
+            src = block.get("source", {})
+            url = src.get("url", "unknown") if isinstance(src, dict) else "unknown"
+            return TextBlock(type="text", text=f"[图片: {url}]")
+        elif typ == "audio":
+            src = block.get("source", {})
+            url = src.get("url", "unknown") if isinstance(src, dict) else "unknown"
+            return TextBlock(type="text", text=f"[音频: {url}]")
+        elif typ == "video":
+            src = block.get("source", {})
+            url = src.get("url", "unknown") if isinstance(src, dict) else "unknown"
+            return TextBlock(type="text", text=f"[视频: {url}]")
+        elif typ == "tool_result":
+            output = block.get("output", [])
+            if isinstance(output, list):
+                filtered_output = []
+                has_change = False
+                for ob in output:
+                    fb = self._filter_block(ob)
+                    if fb is not ob:
+                        has_change = True
+                    filtered_output.append(fb)
+                if has_change:
+                    new_block = dict(block)
+                    new_block["output"] = filtered_output
+                    return new_block
+        return block
+
+    def _filter_msg(self, msg):
+        if not msg or not msg.content:
+            return msg
+        filtered = []
+        has_media = False
+        for block in msg.get_content_blocks():
+            fb = self._filter_block(block)
+            if fb is not block:
+                has_media = True
+            filtered.append(fb)
+        if not has_media:
+            return msg
+        return Msg(
+            name=msg.name,
+            content=filtered,
+            role=msg.role,
+            metadata=msg.metadata,
+            invocation_id=getattr(msg, "invocation_id", None),
+        )
+
+    async def get_memory(self, **kwargs):
+        return await self._wrapped.get_memory(**kwargs)
+
+    async def delete_by_mark(self, **kwargs):
+        return await self._wrapped.delete_by_mark(**kwargs)
 
 
 class ChatAgent(AgentBase):
@@ -82,6 +161,7 @@ class ChatAgent(AgentBase):
             model=self.model,
             formatter=formatter,
             toolkit=toolkit,  # 注册工具
+            memory=_MediaFilteringMemory(InMemoryMemory()),
             max_iters=10,
         )
 
@@ -122,7 +202,7 @@ class ChatAgent(AgentBase):
                 model_name=self.model_name,
                 api_key=self.api_key,
                 client_kwargs={"base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1"},
-                stream=True,
+                stream=False,
             )
         elif self.provider == "kimicode":
             client_kwargs = {}
@@ -132,7 +212,7 @@ class ChatAgent(AgentBase):
                 model_name=self.model_name,
                 api_key=self.api_key,
                 client_kwargs=client_kwargs if client_kwargs else None,
-                stream=True,
+                stream=False,
             )
         elif self.provider in ["openai", "anthropic", "custom"]:
             client_kwargs = {}
@@ -142,7 +222,7 @@ class ChatAgent(AgentBase):
                 model_name=self.model_name,
                 api_key=self.api_key,
                 client_kwargs=client_kwargs if client_kwargs else None,
-                stream=True,
+                stream=False,
             )
         else:
             return DashScopeChatModel(
@@ -152,6 +232,9 @@ class ChatAgent(AgentBase):
 
     def _create_formatter(self):
         """根据配置创建对应的 formatter"""
+        if self.provider == "kimicode":
+            from agentscope.formatter import AnthropicChatFormatter
+            return AnthropicChatFormatter()
         return OpenAIChatFormatter()
 
     async def reply(self, msg: Msg) -> Msg:

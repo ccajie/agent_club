@@ -3,7 +3,7 @@ import type { ManagerConfig, Provider } from '../types'
 import { api } from '../api'
 
 export const ManagerConfigPage = () => {
-  const [manager, setManager] = useState<ManagerConfig | null>(null)
+  const [, setManager] = useState<ManagerConfig | null>(null)
   const [providers, setProviders] = useState<Provider[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -109,11 +109,6 @@ export const ManagerConfigPage = () => {
     } finally {
       setTesting(false)
     }
-  }
-
-  const getProviderName = (providerId: string) => {
-    const provider = providers.find(p => p.id === providerId)
-    return provider ? `${provider.name} (${provider.model_name || provider.model_id})` : providerId
   }
 
   if (loading) {

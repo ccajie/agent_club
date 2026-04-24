@@ -15,6 +15,7 @@ import type {
   ToolUpdateResponse,
   ManagerConfig,
   Skill,
+  HtmlFileInfo,
 } from '../types'
 import type { GameConfig } from '../game/config'
 
@@ -316,6 +317,32 @@ export const api = {
   // 更新当前场景
   async updateCurrentScene(currentScene: string): Promise<GameConfig> {
     const response = await client.put<GameConfig>('/game-config/current-scene', { currentScene })
+    return response.data
+  },
+
+  // ========== HTML Preview API ==========
+
+  // 获取所有 HTML 预览文件
+  async getHtmlPreviews(): Promise<HtmlFileInfo[]> {
+    const response = await client.get<{ files: HtmlFileInfo[] }>('/html-preview')
+    return response.data.files
+  },
+
+  // 保存 HTML 文件
+  async saveHtmlPreview(data: { filename: string; content: string }): Promise<{ success: boolean; filename: string; message: string }> {
+    const response = await client.post('/html-preview', data)
+    return response.data
+  },
+
+  // 获取 HTML 文件内容
+  async getHtmlPreviewContent(filename: string): Promise<{ success: boolean; filename: string; content: string }> {
+    const response = await client.get(`/html-preview/${encodeURIComponent(filename)}/content`)
+    return response.data
+  },
+
+  // 删除 HTML 文件
+  async deleteHtmlPreview(filename: string): Promise<{ success: boolean; message: string }> {
+    const response = await client.delete(`/html-preview/${encodeURIComponent(filename)}`)
     return response.data
   },
 }

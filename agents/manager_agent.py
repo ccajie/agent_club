@@ -9,6 +9,7 @@ from agentscope.agent import AgentBase
 from agentscope.message import Msg
 from agentscope.model import DashScopeChatModel, OpenAIChatModel, AnthropicChatModel
 from agentscope.formatter import OpenAIChatFormatter
+from agentscope.memory import InMemoryMemory
 
 from tools import get_toolkit
 
@@ -75,10 +76,13 @@ class ManagerAgent(AgentBase):
             self.base_url = None
 
         self.model = self._create_model()
-        self.formatter = OpenAIChatFormatter()
+        self.formatter = self._create_formatter()
 
         # Worker注册表
         self._workers: Dict[str, 'WorkerAgent'] = {}
+
+        # 共享记忆（所有Worker共用，确保彼此可见对话历史）
+        self.shared_memory = InMemoryMemory()
 
         # 任务历史
         self._task_history: List[TaskPlan] = []
@@ -126,6 +130,13 @@ class ManagerAgent(AgentBase):
                 api_key=self.api_key
             )
 
+    def _create_formatter(self):
+        """根据配置创建对应的 formatter"""
+        if self.provider == "kimicode":
+            from agentscope.formatter import AnthropicChatFormatter
+            return AnthropicChatFormatter()
+        return OpenAIChatFormatter()
+
     def _get_skills_prompt(self) -> str:
         """获取技能说明文本，用于注入 system prompt"""
         from skills import skill_registry
@@ -135,6 +146,8 @@ class ManagerAgent(AgentBase):
         """注册Worker Agent"""
         self._workers[worker.name] = worker
         worker.set_manager(self)  # 告诉Worker谁是Manager
+        # 将共享记忆注入Worker，使所有Worker可见同一份对话历史
+        worker.set_shared_memory(self.shared_memory)
         print(f"✅ Manager 注册 Worker: {worker.name} ({worker.specialty})")
 
     def get_worker_capabilities(self) -> str:
@@ -180,6 +193,9 @@ class ManagerAgent(AgentBase):
         print(f"🎯 [Manager] 收到用户请求: {user_content[:50]}...")
         print(f"{'='*60}")
 
+        # 将用户请求写入共享记忆，使所有Worker可见
+        await self.shared_memory.add(msg)
+
         # 步骤1: 分析请求并制定计划
         print(f"\n📋 [Manager] 步骤1: 分析请求并制定计划...")
         self._emit("manager_thinking", agent_name=self.name, role=self.role, content="正在分析任务需求...")
@@ -214,11 +230,14 @@ class ManagerAgent(AgentBase):
         print(f"\n✅ [Manager] 任务完成，返回最终回复")
         print(f"{'='*60}\n")
 
-        return Msg(
+        final_msg = Msg(
             name=self.name,
             content=final_response,
             role="assistant"
         )
+        # 将Manager的最终回复写入共享记忆
+        await self.shared_memory.add(final_msg)
+        return final_msg
 
     async def _create_task_plan(self, user_request: str) -> TaskPlan:
         """分析用户请求，创建任务执行计划"""
@@ -235,6 +254,12 @@ class ManagerAgent(AgentBase):
 1. 如果请求简单，直接回复 "DIRECT"，不需要分派
 2. 如果需要多个步骤或不同专长，制定分派计划
 
+文件协作约定（必须遵守）：
+- 产品/设计类文档（PRD、需求说明等）必须保存到 output/doc/ 目录，output 字段示例: "output/doc/prd.md"
+- 前端代码必须生成纯 HTML 文件（所有 CSS 和 JavaScript 都内联写在同一个 HTML 文件里，不单独生成 .css 或 .js 文件），保存到 output/preview/ 目录，output 字段示例: "output/preview/index.html" 或 "output/preview/game/index.html"
+- 如涉及文件依赖，请在 input 中明确文件路径
+- 每个步骤都必须包含 output 字段，指定产出的文件路径
+
 请以JSON格式回复：
 {{
     "need_dispatch": true/false,
@@ -245,6 +270,7 @@ class ManagerAgent(AgentBase):
             "agent_name": "负责该步骤的Agent名称",
             "task": "具体任务描述",
             "input": "需要传递给Agent的输入",
+            "output": "产出的文件路径（如 output/doc/prd.md 或 output/preview/index.html）",
             "depends_on": []  // 依赖的步骤ID
         }}
     ]
@@ -254,9 +280,8 @@ class ManagerAgent(AgentBase):
         planning_msg = Msg(name="system", content=system_prompt, role="system")
         user_msg = Msg(name="User", content=user_request, role="user")
 
-        response = await self.model(
-            messages=[planning_msg.to_dict(), user_msg.to_dict()]
-        )
+        prompt = await self.formatter.format([planning_msg, user_msg])
+        response = await self.model(prompt)
 
         try:
             content = self._extract_text_from_response(response.content)
@@ -338,6 +363,62 @@ class ManagerAgent(AgentBase):
         task_plan.status = "completed"
         print(f"\n✅ [Manager] 所有步骤执行完成")
 
+    def _extract_summary(self, content) -> str:
+        """从 Agent 响应内容中提取纯文本摘要"""
+        if not content:
+            return ""
+        if isinstance(content, list):
+            texts = []
+            for item in content:
+                if isinstance(item, dict) and item.get("type") == "text":
+                    texts.append(item.get("text", ""))
+                elif isinstance(item, str):
+                    texts.append(item)
+            return "\n".join(texts)
+        elif isinstance(content, dict):
+            return content.get("text", str(content))
+        return str(content)
+
+    def _extract_file_paths(self, text: str) -> List[str]:
+        """从文本中提取可能的文件路径（如 output/doc/prd.md）"""
+        import re
+        # 匹配 output/ 开头的路径
+        paths = re.findall(r'output/[\w\-/.]+\.(?:md|html|css|js|json|txt|py)', text)
+        # 匹配文件引用格式："保存到 xxx"、"写入 xxx"
+        paths += re.findall(r'(?:保存到|写入|路径[:：]?\s*)[`"\']?(output/[\w\-/.]+)[`"\']?', text)
+        return sorted(set(paths))
+
+    def _build_context_from_results(self, task_plan: TaskPlan, depends_on: List[str]) -> str:
+        """从上游步骤结果中构建精简上下文（简短摘要 + 明确的文件引用）。"""
+        context_parts = []
+        file_refs = []
+        for dep_id in depends_on:
+            dep_result = task_plan.results.get(dep_id)
+            dep_step = next((s for s in task_plan.steps if s["step_id"] == dep_id), None)
+            if dep_result and dep_result.get("status") == "completed":
+                dep_agent = dep_step.get("agent_name", "未知") if dep_step else "未知"
+                summary = dep_result.get("summary", "")
+                if summary:
+                    # 摘要始终简短，只给概览
+                    context_parts.append(f"【{dep_agent} 的成果概览】\n{summary[:300]}")
+                # 收集上游步骤引用的文件路径
+                ref_files = dep_result.get("referenced_files", [])
+                if ref_files:
+                    file_refs.extend(ref_files)
+            # 收集上游步骤在计划中约定的 output 文件路径
+            if dep_step and dep_step.get("output"):
+                file_refs.append(dep_step["output"])
+
+        result = "\n\n".join(context_parts)
+        if file_refs:
+            unique_files = sorted(set(file_refs))
+            result += (
+                f"\n\n【必读文件】\n"
+                f"以上仅为概览，开发必须依据以下原始文档，请先读取：\n"
+                + "\n".join(f"- read_file('{f}')" for f in unique_files)
+            )
+        return result
+
     async def _execute_step(self, step: Dict, task_plan: TaskPlan):
         """执行单个步骤"""
         agent_name = step.get("agent_name")
@@ -347,9 +428,7 @@ class ManagerAgent(AgentBase):
         print(f"\n   📤 [Manager] 分派任务给 {agent_name}:")
         print(f"      任务: {task_description[:50]}...")
 
-        # 获取Worker
         worker = self._workers.get(agent_name)
-
         if not worker:
             print(f"      ❌ Worker {agent_name} 未找到")
             task_plan.results[step["step_id"]] = {
@@ -365,40 +444,88 @@ class ManagerAgent(AgentBase):
             role=worker.role
         )
 
-        # 构建任务消息
+        # Manager 统一构建精简上下文：只提取上游步骤的文本摘要
+        context_str = self._build_context_from_results(
+            task_plan, step.get("depends_on", [])
+        )
+
+        # 构建文件协作约定提示
+        file_notes = []
+        if any(kw in agent_name for kw in ["产品", "设计", "需求"]):
+            file_notes.append("【文档保存】如产出PRD、设计文档、需求说明等，请保存到 output/doc/ 目录，方便下游同事读取。")
+        if any(kw in agent_name for kw in ["前端", "后端", "开发", "程序"]):
+            if step.get("depends_on"):
+                file_notes.append("【文档读取】上游步骤的文档可能保存在 output/doc/ 目录，请先搜索并读取相关文件后再开始开发。")
+            file_notes.append("【代码保存】代码文件请保存到 output/ 目录下。")
+        file_instruction = "\n".join(file_notes)
+
+        # 构建精简的任务消息
+        if context_str:
+            task_content = (
+                f"【任务分派】\n"
+                f"任务: {task_description}\n"
+                f"输入: {task_input}\n\n"
+                f"【前置产出参考】\n"
+                f"{context_str}\n\n"
+                f"请直接基于以上内容执行任务。"
+            )
+        else:
+            task_content = (
+                f"【任务分派】\n"
+                f"任务: {task_description}\n"
+                f"输入: {task_input}\n"
+                f"请执行此任务并返回结果。"
+            )
+
+        if file_instruction:
+            task_content += f"\n\n{file_instruction}"
+
+        # 如果当前步骤在计划中约定了产出文件路径，明确告知 Worker
+        output_file = step.get("output")
+        if output_file:
+            task_content += f"\n\n【产出要求】请将本步骤的主要产出保存到: {output_file}"
+
         task_msg = Msg(
             name=self.name,
-            content=f"【任务分派】\n任务: {task_description}\n输入: {task_input}\n请执行此任务并返回结果。",
+            content=task_content,
             role="user"
         )
 
         try:
-            # 调用Worker
+            # 调用Worker，添加超时保护
             print(f"      ⏳ 等待 {agent_name} 执行...")
-            response = await worker.reply(task_msg)
+            response = await asyncio.wait_for(
+                worker.reply(task_msg),
+                timeout=120.0,
+            )
 
-            result_preview = str(response.content)[:100] if response.content else ""
-            print(f"      ✅ {agent_name} 完成，结果: {result_preview}...")
+            # Manager 统一提取摘要
+            result_summary = self._extract_summary(response.content)
+            result_preview = result_summary[:100] if result_summary else ""
+            print(f"      ✅ {agent_name} 完成，摘要: {result_preview}...")
 
-            result_content = response.content
-            if isinstance(result_content, list):
-                texts = [item.get("text", "") if isinstance(item, dict) else str(item) for item in result_content]
-                result_text = "\n".join(texts)
-            elif isinstance(result_content, dict):
-                result_text = result_content.get("text", str(result_content))
-            else:
-                result_text = str(result_content)
+            # Manager 统一决定写入共享记忆的内容：精简摘要
+            await self.shared_memory.add(Msg(
+                name=agent_name,
+                content=result_summary[:1000],
+                role="assistant"
+            ))
+
+            # 从摘要中提取文件路径，供下游步骤引用
+            referenced_files = self._extract_file_paths(result_summary)
 
             task_plan.results[step["step_id"]] = {
                 "status": "completed",
                 "agent": agent_name,
-                "result": response.content
+                "result": response.content,      # 完整结果（供最终整合使用）
+                "summary": result_summary,        # 文本摘要（供下游Worker参考）
+                "referenced_files": referenced_files,  # 引用的文件路径
             }
 
             # 发射 Worker 完成事件
             self._emit("worker_done",
                 agent_name=agent_name,
-                result=result_text,
+                result=result_summary,
                 task=task_description
             )
 
@@ -409,7 +536,6 @@ class ManagerAgent(AgentBase):
                 "agent": agent_name,
                 "error": str(e)
             }
-            # 发射 Worker 失败事件
             self._emit("worker_done",
                 agent_name=agent_name,
                 result=f"执行失败: {e}",
@@ -418,7 +544,7 @@ class ManagerAgent(AgentBase):
             )
 
     async def _integrate_results(self, task_plan: TaskPlan) -> str:
-        """整合所有Worker的结果"""
+        """整合所有Worker的结果（使用摘要而非原始内容）"""
 
         results_summary = []
         for step in task_plan.steps:
@@ -426,9 +552,12 @@ class ManagerAgent(AgentBase):
             result = task_plan.results.get(step_id, {})
 
             if result.get("status") == "completed":
+                # 优先使用摘要，更简洁且为纯文本
+                text = result.get("summary", "")
+                if not text:
+                    text = self._extract_summary(result.get("result", ""))
                 results_summary.append(
-                    f"步骤 {step_id} ({step.get('agent_name')}):\n"
-                    f"{result.get('result', '')}"
+                    f"步骤 {step_id} ({step.get('agent_name')}):\n{text}"
                 )
             else:
                 results_summary.append(
@@ -454,11 +583,16 @@ class ManagerAgent(AgentBase):
 保持你的人设，回答应该简洁、专业。
 """
 
-        integrate_msg = Msg(name="system", content=system_prompt, role="system")
-
-        response = await self.model(
-            messages=[integrate_msg.to_dict()]
+        # Anthropic API 要求 messages 非空且不能只有 system 消息
+        # 将 system prompt 和整合请求合并为 user 消息
+        integrate_msg = Msg(
+            name="user",
+            content=system_prompt,
+            role="user",
         )
+
+        prompt = await self.formatter.format([integrate_msg])
+        response = await self.model(prompt)
 
         final_content = self._extract_text_from_response(response.content)
         print(f"   ✅ [Manager] 结果整合完成，生成回复长度: {len(final_content)}字符")
@@ -480,9 +614,8 @@ class ManagerAgent(AgentBase):
 
         print(f"\n   🧠 [Manager] 直接处理请求（不经过Workers）...")
         self._emit("manager_integrating", agent_name=self.name, role=self.role)
-        response = await self.model(
-            messages=[system_msg.to_dict(), msg.to_dict()]
-        )
+        prompt = await self.formatter.format([system_msg, msg])
+        response = await self.model(prompt)
 
         content = self._extract_text_from_response(response.content)
         print(f"   ✅ [Manager] 直接回复完成，长度: {len(content)}字符")
@@ -528,8 +661,9 @@ class WorkerAgent:
         self.expertise = expertise
         self._manager: Optional[ManagerAgent] = None
         self._available_tools = tools or []
+        self._shared_memory = None
 
-        # 初始化底层Agent
+        # 初始化底层Agent（shared_memory 稍后通过 set_shared_memory 注入）
         from .chat_agent import ChatAgent
 
         # 构建带工具限制的llm_config
@@ -550,6 +684,12 @@ class WorkerAgent:
     def set_manager(self, manager: ManagerAgent):
         """设置Manager"""
         self._manager = manager
+
+    def set_shared_memory(self, memory):
+        """保存共享记忆引用，由 Manager 统一决定写入内容"""
+        self._shared_memory = memory
+        # Worker 的 ReActAgent 使用独立 memory，工具调用历史不污染共享记忆
+        # Manager 在 Worker 完成后决定把什么摘要写入共享记忆
 
     async def reply(self, msg: Msg) -> Msg:
         """响应Manager分派的任务"""
