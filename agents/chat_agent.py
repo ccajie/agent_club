@@ -237,6 +237,11 @@ class ChatAgent(AgentBase):
             return AnthropicChatFormatter()
         return OpenAIChatFormatter()
 
+    async def observe(self, msg: Msg) -> None:
+        """接收其他 agent 的消息，放入 ReActAgent 的 memory（支持 MsgHub 广播）。"""
+        if self.react_agent and hasattr(self.react_agent, 'observe'):
+            await self.react_agent.observe(msg)
+
     async def reply(self, msg: Msg) -> Msg:
         """
         处理消息并生成回复
@@ -251,10 +256,6 @@ class ChatAgent(AgentBase):
             Agent 的回复消息
         """
         return await self.react_agent.reply(msg)
-
-    async def __call__(self, msg: Msg) -> Msg:
-        """使 Agent 可以直接被调用"""
-        return await self.reply(msg)
 
 
 def create_default_agents(llm_config: Dict[str, Any]) -> List[ChatAgent]:
