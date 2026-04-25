@@ -29,6 +29,7 @@ export interface CharacterConfig {
 
 export interface SceneConfig {
   key: string
+  description?: string
   mapPath: string
   tilesetName: string
   tilesetImagePath: string

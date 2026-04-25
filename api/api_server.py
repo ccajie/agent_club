@@ -37,6 +37,18 @@ from api.game_config_api import router as game_config_router
 from api.html_preview_api import router as html_preview_router
 from skills import skill_registry
 
+# ============== 游戏配置路径 ==============
+GAME_CONFIG_PATH = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    "rpg-frontend", "public", "assets", "game-config.json"
+)
+
+# ============== 场景描述注入状态 ==============
+_scene_inject_state = {
+    "last_scene_key": None,
+    "last_scene_desc": None,
+}
+
 # ============== 全局状态 ==============
 system_state = {
     "initialized": False,
@@ -172,6 +184,48 @@ async def lifespan(app: FastAPI):
     print("🛑 正在关闭系统...")
 
 
+def _get_scene_description() -> str:
+    """读取 game-config.json 获取当前场景描述。
+
+    只在场景切换或描述内容变化时返回描述，避免同一场景下重复注入。
+    """
+    global _scene_inject_state
+    try:
+        if not os.path.exists(GAME_CONFIG_PATH):
+            _scene_inject_state["last_scene_key"] = None
+            _scene_inject_state["last_scene_desc"] = None
+            return ""
+        with open(GAME_CONFIG_PATH, "r", encoding="utf-8") as f:
+            config = json.load(f)
+        current_scene_key = config.get("currentScene", "")
+        scenes = config.get("scenes", {})
+        scene = scenes.get(current_scene_key, {})
+        desc = scene.get("description", "")
+
+        last_key = _scene_inject_state["last_scene_key"]
+        last_desc = _scene_inject_state["last_scene_desc"]
+
+        # 场景未变化且描述未变化，不需要重新注入
+        if current_scene_key == last_key and desc == last_desc:
+            return ""
+
+        # 更新记录并返回新描述
+        _scene_inject_state["last_scene_key"] = current_scene_key
+        _scene_inject_state["last_scene_desc"] = desc
+        return desc
+    except Exception as e:
+        print(f"⚠️ 读取场景描述失败: {e}")
+        return ""
+
+
+def _wrap_message_with_scene(message: str) -> str:
+    """将用户消息包装上场景描述前缀。只在场景变化时注入一次。"""
+    scene_desc = _get_scene_description()
+    if not scene_desc:
+        return message
+    return f"【场景背景】{scene_desc}\n\n{message}"
+
+
 async def init_system():
     """初始化多 Agent 系统 - 支持 Manager-Worker 模式"""
     print("🚀 Initializing multi-agent system...")
@@ -185,6 +239,11 @@ async def init_system():
     system_state["manager"] = None
     system_state["workers"] = []
     system_state["use_manager_mode"] = False
+
+    # 重置场景注入状态，确保重新初始化后第一次消息会注入场景描述
+    global _scene_inject_state
+    _scene_inject_state["last_scene_key"] = None
+    _scene_inject_state["last_scene_desc"] = None
 
     # 获取 Manager 配置
     manager_config = manager_config_manager.get_config()
@@ -451,7 +510,10 @@ async def _chat_with_manager(request: ChatRequest) -> ChatResponse:
     """使用 Manager-Worker 模式处理对话"""
     manager = system_state["manager"]
 
-    user_msg = Msg(name="User", content=request.message, role="user")
+    # 注入场景描述到用户消息中
+    wrapped_message = _wrap_message_with_scene(request.message)
+    user_msg = Msg(name="User", content=wrapped_message, role="user")
+    print(f"\n👤 [UserMsg → Manager] {wrapped_message[:500]}...")
 
     # Manager 分析任务并分派给 Workers
     response = await manager.reply(user_msg)
@@ -510,7 +572,10 @@ async def _chat_with_msghub(request: ChatRequest) -> ChatResponse:
     async with MsgHub(participants=agents, enable_auto_broadcast=True):
         # 让第一个 Agent 主导对话
         primary_agent = agents[0]
-        user_msg = Msg(name="User", content=request.message, role="user")
+        # 注入场景描述到用户消息中
+        wrapped_message = _wrap_message_with_scene(request.message)
+        user_msg = Msg(name="User", content=wrapped_message, role="user")
+        print(f"\n👤 [UserMsg → {primary_agent.name}] {wrapped_message[:500]}...")
         response = await primary_agent(user_msg)
 
         # 提取响应内容
@@ -574,7 +639,10 @@ async def chat_stream(request: ChatRequest):
             if system_state["use_manager_mode"] and system_state["manager"]:
                 # Manager-Worker 模式流式输出 - 展示中间过程
                 manager = system_state["manager"]
-                user_msg = Msg(name="User", content=request.message, role="user")
+                # 注入场景描述到用户消息中
+                wrapped_message = _wrap_message_with_scene(request.message)
+                user_msg = Msg(name="User", content=wrapped_message, role="user")
+                print(f"\n👤 [UserMsg → Manager] {wrapped_message[:500]}...")
 
                 event_queue = asyncio.Queue()
 
@@ -661,7 +729,10 @@ async def chat_stream(request: ChatRequest):
 
                 async with MsgHub(participants=agents, enable_auto_broadcast=True):
                     for idx, agent in enumerate(agents):
-                        user_msg = Msg(name="User", content=request.message, role="user")
+                        # 注入场景描述到用户消息中
+                        wrapped_message = _wrap_message_with_scene(request.message)
+                        user_msg = Msg(name="User", content=wrapped_message, role="user")
+                        print(f"\n👤 [UserMsg → {agent.name}] {wrapped_message[:500]}...")
 
                         # 发送 Agent 开始事件
                         yield f"data: {json.dumps({'type': 'agent_start', 'agent_name': agent.name, 'agent_role': agent.role, 'index': idx})}\n\n"
