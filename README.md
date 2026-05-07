@@ -2,11 +2,11 @@
 
 > ⚠️ **早期开发阶段** | 🚧 **持续开发中** | 📝 **API 可能变动**
 
-一个基于 **RPG 像素风格** 的多 Agent 协作对话系统，支持 Manager-Worker 架构
+一个基于 **RPG 像素风格** 的多 Agent 协作对话系统，支持 Manager-Worker 架构与作品发布平台
 
 ![Status](https://img.shields.io/badge/status-alpha-orange)
 ![Python](https://img.shields.io/badge/python-3.10+-blue)
-![FastAPI](https://img.shields.io/badge/FastAPI-0.104+-green)
+![FastAPI](https://img.shields.io/badge/FastAPI-0.136+-green)
 ![React](https://img.shields.io/badge/React-18+-61dafb)
 
 ![img_2.png](img_2.png)
@@ -27,6 +27,13 @@
 - **MsgHub 模式**：传统多 Agent 广播对话
 - **独立模型配置**：每个 Agent 可配置不同的 LLM Provider
 
+### 🏪 作品发布平台（新增）
+- **发布功能**：将 Agent 产出的 HTML 作品一键发布到平台广场
+- **作品广场**：所有用户可浏览、预览、使用已发布的作品
+- **沙箱渲染**：作品在 iframe 沙箱中安全运行
+- **搜索与排序**：支持关键词搜索、按最新/最热排序
+- **标签分类**：支持自定义标签，便于作品分类发现
+
 ### 🔧 支持的模型提供商
 | 提供商 | 状态 | 备注 |
 |--------|------|------|
@@ -39,11 +46,11 @@
 ### 🛠️ 技能系统
 - **内置技能**：文件操作、浏览器自动化
 - **技能管理**：通过 Skill 面板启用/禁用技能
-- **可扩展**：支持自定义技能注册，自动加载 `agents/skills/` 目录下的技能文件
+- **可扩展**：支持自定义技能注册，自动加载 `skills/examples/` 目录下的技能文件
 - **技能绑定**：每个 Agent 可独立配置启用的技能列表
 
 ### 🧰 工具系统
-- 内置工具：文件操作、浏览器自动化
+- 内置工具：文件操作、浏览器自动化、Shell 命令
 - 可扩展：支持自定义工具注册
 
 ---
@@ -64,8 +71,9 @@
 │  │  React UI 组件                                   │   │
 │  │  - 侧边栏导航                                    │   │
 │  │  - 浮动聊天窗口                                  │   │
-│  │  - Agent 配置面板                                │   │
-│  │  - Provider 配置面板                             │   │
+│  │  - Agent / Provider / Skill 配置面板              │   │
+│  │  - 网页预览 & 发布                               │   │
+│  │  - 作品广场                                      │   │
 │  └─────────────────────────────────────────────────┘   │
 └─────────────────────────────────────────────────────────┘
                             ↑↓ HTTP
@@ -79,13 +87,19 @@
 │  │ManagerAgent │  │ WorkerAgent │  │   ChatAgent     │ │
 │  │  (任务协调)  │  │  (任务执行)  │  │  (普通对话)      │ │
 │  └─────────────┘  └─────────────┘  └─────────────────┘ │
+│  ┌─────────────────────────────────────────────────────┐│
+│  │          平台子应用 (/platform)                      ││
+│  │  - 作品发布 API                                     ││
+│  │  - 广场列表 API                                     ││
+│  │  - 作品渲染服务                                     ││
+│  └─────────────────────────────────────────────────────┘│
 └─────────────────────────────────────────────────────────┘
                             ↑↓
 ┌─────────────────────────────────────────────────────────┐
 │              基础设施层                                   │
 │  ┌─────────────┐  ┌─────────────┐  ┌─────────────────┐ │
-│  │   Qdrant    │  │   配置文件   │  │    工具系统      │ │
-│  │  向量数据库  │  │  (JSON)     │  │  (内置+扩展)     │ │
+│  │   Qdrant    │  │   SQLite    │  │    工具系统      │ │
+│  │  向量数据库  │  │  平台数据库  │  │  (内置+扩展)     │ │
 │  └─────────────┘  └─────────────┘  └─────────────────┘ │
 └─────────────────────────────────────────────────────────┘
 ```
@@ -155,6 +169,7 @@ python main.py
 │   ├── api_server.py      # 主服务入口
 │   ├── agents_api.py      # Agent 配置接口
 │   ├── providers_api.py   # Provider 配置接口
+│   ├── html_preview_api.py # HTML 预览接口
 │   └── ...
 ├── config/                # 配置管理
 │   ├── agents_config.py   # Agent 配置
@@ -165,9 +180,19 @@ python main.py
 │   ├── dashscope_provider.py
 │   ├── anthropic_provider.py
 │   └── ...
+├── plaza_platform/        # 作品发布平台（新增）
+│   ├── server.py          # 平台 FastAPI 子应用
+│   ├── models.py          # 数据模型 (Work)
+│   ├── database.py        # SQLite + SQLAlchemy
+│   ├── storage.py         # 文件存储抽象层
+│   ├── works/             # 已发布作品文件存储
+│   └── platform.db        # 平台数据库
 ├── tools/                 # 工具系统
 │   ├── builtin/           # 内置工具
 │   └── extensions/        # 扩展工具
+├── skills/                # 技能系统
+│   ├── skill_registry.py  # 技能注册器
+│   └── examples/          # 技能定义 (Markdown)
 ├── rag_knowledge_base/    # RAG 知识库
 ├── rpg-frontend/          # 前端项目
 │   ├── src/
@@ -175,13 +200,21 @@ python main.py
 │   │   │   └── ChatScene.ts
 │   │   ├── components/    # React 组件
 │   │   ├── pages/         # 页面组件
-│   │   └── ...
+│   │   │   ├── AgentConfigPage.tsx
+│   │   │   ├── ProviderConfigPage.tsx
+│   │   │   ├── HtmlPreviewPage.tsx
+│   │   │   ├── PlazaPage.tsx        # 作品广场（新增）
+│   │   │   └── ...
+│   │   └── api/           # API 客户端
 │   ├── public/
 │   │   └── assets/
 │   │       ├── characters/  # 角色帧动画精灵图
 │   │       └── maps/        # Tiled 地图资源
 │   └── package.json
 ├── data/                  # 数据存储
+├── output/                # Agent 产出文件
+│   ├── doc/               # 文档类产出
+│   └── preview/           # HTML 预览文件
 ├── main.py               # 主入口
 └── requirements.txt      # Python 依赖
 ```
@@ -207,22 +240,97 @@ python main.py
 - 使用传统 MsgHub 模式
 - 所有 Agent 同时收到消息并独立回复
 
+### 作品发布平台
+
+1. Agent 在对话中产出 HTML 文件，自动保存到 `output/preview/` 目录
+2. 进入 **"网页预览"** 页面，选中文件后点击 **"发布到广场"**
+3. 填写作品标题、简介、标签等信息后发布
+4. 所有用户均可在 **"作品广场"** 浏览和使用已发布的作品
+
 ---
 
 ## 🔌 API 端点
 
+### Agent 系统 API
+
 | 端点 | 方法 | 描述 |
 |------|------|------|
 | `/api/chat` | POST | 发送消息，获取 Agent 响应 |
+| `/api/chat/stream` | POST | 流式响应（SSE） |
 | `/api/agents` | GET | 获取所有 Agent 列表 |
-| `/api/agents` | POST | 创建新 Agent |
-| `/api/providers` | GET | 获取所有 Provider 列表 |
-| `/api/providers` | POST | 创建新 Provider |
+| `/api/agents-config` | GET/POST | Agent 配置 CRUD |
+| `/api/providers` | GET/POST | Provider 配置 CRUD |
+| `/api/tools` | GET/PUT | 工具管理 |
+| `/api/skills` | GET/PUT | 技能管理 |
+| `/api/manager` | GET/PUT | Manager 配置 |
+| `/api/game-config` | GET/PUT | 游戏场景配置 |
+| `/api/html-preview` | GET/POST/DELETE | HTML 预览文件管理 |
 | `/api/system/reinitialize` | POST | 重新初始化系统 |
 | `/api/health` | GET | 健康检查 |
 
+### 平台广场 API
 
-本项目处于早期开发阶段，API 和架构可能随时调整。欢迎提交 Issue 和 PR！
+| 端点 | 方法 | 描述 |
+|------|------|------|
+| `/platform/api/publish` | POST | 发布作品到广场 |
+| `/platform/api/works` | GET | 获取广场作品列表（分页、排序、搜索） |
+| `/platform/api/works/{id}` | GET | 获取作品详情 |
+| `/platform/api/works/{id}/render` | GET | 渲染作品 HTML（iframe 加载） |
+| `/platform/api/works/{id}` | DELETE | 删除作品 |
+| `/platform/api/health` | GET | 平台健康检查 |
+
+#### 发布作品示例
+
+```bash
+# 从本地预览文件发布
+curl -X POST http://localhost:8000/platform/api/publish \
+  -H "Content-Type: application/json" \
+  -d '{
+    "title": "我的作品",
+    "description": "一个很酷的交互页面",
+    "author": "用户名",
+    "tags": "游戏,交互",
+    "source_file": "index.html"
+  }'
+
+# 直接传 HTML 内容发布
+curl -X POST http://localhost:8000/platform/api/publish \
+  -H "Content-Type: application/json" \
+  -d '{
+    "title": "Hello World",
+    "content": "<!DOCTYPE html><html><body><h1>Hello!</h1></body></html>"
+  }'
+```
+
+---
+
+## 🐳 Docker 部署
+
+```bash
+# 启动 Qdrant 向量数据库
+docker-compose up -d qdrant
+
+# 或完整部署
+docker-compose up -d
+```
+
+详细 Docker 配置参考 [DOCKER_SETUP.md](DOCKER_SETUP.md)
+
+---
+
+## 🗺️ 开发路线
+
+- [x] RPG 像素风 2D 游戏场景
+- [x] Manager-Worker 多 Agent 协作
+- [x] 多 LLM Provider 支持
+- [x] 流式响应输出
+- [x] 技能系统
+- [x] 工具系统
+- [x] HTML 预览与作品发布平台
+- [ ] 用户认证系统
+- [ ] 作品点赞与评论
+- [ ] 对象存储 & CDN 加速
+- [ ] 更多游戏场景
 
 ---
 
@@ -234,9 +342,11 @@ MIT License
 
 ## 🙏 致谢
 
-- [AgentScope](https://github.com/modelscope/agentscope) - 多 Agent 框架参考
+- [AgentScope](https://github.com/modelscope/agentscope) - 多 Agent 框架
 - [Phaser](https://phaser.io/) - 2D 游戏引擎
 - [FastAPI](https://fastapi.tiangolo.com/) - 现代 Python Web 框架
+- [React](https://react.dev/) - UI 框架
+- [SQLAlchemy](https://www.sqlalchemy.org/) - Python ORM
 
 ---
 

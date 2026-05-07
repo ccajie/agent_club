@@ -58,6 +58,12 @@ export function HtmlPreviewPage() {
   const [newFilename, setNewFilename] = useState('')
   const [newContent, setNewContent] = useState('')
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null)
+  const [showPublishModal, setShowPublishModal] = useState(false)
+  const [publishTitle, setPublishTitle] = useState('')
+  const [publishDesc, setPublishDesc] = useState('')
+  const [publishAuthor, setPublishAuthor] = useState('')
+  const [publishTags, setPublishTags] = useState('')
+  const [isPublishing, setIsPublishing] = useState(false)
   const iframeRef = useRef<HTMLIFrameElement>(null)
 
   const loadFiles = useCallback(async () => {
@@ -104,6 +110,42 @@ export function HtmlPreviewPage() {
       console.error('Failed to save file:', err)
       alert('保存失败')
     }
+  }
+
+  const handlePublish = async () => {
+    if (!selectedFile || !publishTitle.trim()) return
+    setIsPublishing(true)
+    try {
+      const result = await api.publishWork({
+        title: publishTitle.trim(),
+        description: publishDesc.trim(),
+        author: publishAuthor.trim() || '匿名用户',
+        tags: publishTags.trim(),
+        source_file: selectedFile,
+      })
+      if (result.success) {
+        alert(`发布成功！作品: ${result.title}`)
+        setShowPublishModal(false)
+        setPublishTitle('')
+        setPublishDesc('')
+        setPublishAuthor('')
+        setPublishTags('')
+      }
+    } catch (err: any) {
+      alert('发布失败: ' + (err?.response?.data?.detail || err.message || '未知错误'))
+    } finally {
+      setIsPublishing(false)
+    }
+  }
+
+  const openPublishModal = () => {
+    if (!selectedFile) {
+      alert('请先选择一个文件')
+      return
+    }
+    // 自动填充标题为文件名（去扩展名）
+    setPublishTitle(selectedFile.replace(/\.html$/i, ''))
+    setShowPublishModal(true)
   }
 
   const previewUrl = selectedFile ? `/preview/${selectedFile}` : ''
@@ -184,6 +226,9 @@ export function HtmlPreviewPage() {
             <>
               <div className="preview-toolbar">
                 <span className="preview-filename">{selectedFile}</span>
+                <button className="toolbar-btn publish" onClick={openPublishModal}>
+                  发布到广场
+                </button>
                 <a
                   href={previewUrl}
                   target="_blank"
@@ -247,6 +292,64 @@ export function HtmlPreviewPage() {
                 disabled={!newFilename.trim()}
               >
                 保存
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 发布弹窗 */}
+      {showPublishModal && (
+        <div className="modal-overlay" onClick={() => setShowPublishModal(false)}>
+          <div className="modal-content" onClick={e => e.stopPropagation()}>
+            <h3>发布到广场</h3>
+            <div className="form-group">
+              <label>作品标题 *</label>
+              <input
+                type="text"
+                value={publishTitle}
+                onChange={e => setPublishTitle(e.target.value)}
+                placeholder="给作品起个名字"
+                autoFocus
+              />
+            </div>
+            <div className="form-group">
+              <label>作者</label>
+              <input
+                type="text"
+                value={publishAuthor}
+                onChange={e => setPublishAuthor(e.target.value)}
+                placeholder="匿名用户"
+              />
+            </div>
+            <div className="form-group">
+              <label>简介</label>
+              <textarea
+                value={publishDesc}
+                onChange={e => setPublishDesc(e.target.value)}
+                placeholder="简单描述一下这个作品..."
+                rows={3}
+              />
+            </div>
+            <div className="form-group">
+              <label>标签（逗号分隔）</label>
+              <input
+                type="text"
+                value={publishTags}
+                onChange={e => setPublishTags(e.target.value)}
+                placeholder="游戏, 工具, 可视化"
+              />
+            </div>
+            <div className="modal-actions">
+              <button className="btn secondary" onClick={() => setShowPublishModal(false)}>
+                取消
+              </button>
+              <button
+                className="btn primary"
+                onClick={handlePublish}
+                disabled={!publishTitle.trim() || isPublishing}
+              >
+                {isPublishing ? '发布中...' : '发布'}
               </button>
             </div>
           </div>

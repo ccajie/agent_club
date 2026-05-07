@@ -413,6 +413,10 @@ app.include_router(game_config_router)
 # 添加 HTML 预览路由
 app.include_router(html_preview_router)
 
+# 挂载平台子应用（作品发布与广场）
+from plaza_platform.server import platform_app
+app.mount("/platform", platform_app)
+
 
 # ============== API 端点 ==============
 
@@ -803,11 +807,11 @@ def setup_static_files():
     if os.path.exists(dist_dir):
         app.mount("/assets", StaticFiles(directory=os.path.join(dist_dir, "assets")), name="assets")
 
-        @app.get("/")
+        @app.api_route("/", methods=["GET", "HEAD"])
         async def serve_index():
             return FileResponse(os.path.join(dist_dir, "index.html"))
 
-        @app.get("/{full_path:path}")
+        @app.api_route("/{full_path:path}", methods=["GET", "HEAD"])
         async def serve_spa(full_path: str):
             if full_path.startswith("api/") or full_path.startswith("preview/"):
                 raise HTTPException(status_code=404, detail="Not Found")

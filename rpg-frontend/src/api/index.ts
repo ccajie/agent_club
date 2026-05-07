@@ -345,6 +345,59 @@ export const api = {
     const response = await client.delete(`/html-preview/${encodeURIComponent(filename)}`)
     return response.data
   },
+
+  // ========== 平台广场 API ==========
+
+  // 发布作品到平台
+  async publishWork(data: {
+    title: string
+    description?: string
+    author?: string
+    tags?: string
+    source_file?: string
+    content?: string
+  }): Promise<{ success: boolean; work_id: string; title: string; message: string }> {
+    const response = await axios.post('/platform/api/publish', data)
+    return response.data
+  },
+
+  // 获取广场作品列表
+  async getPlazaWorks(params?: {
+    page?: number
+    page_size?: number
+    sort?: 'latest' | 'popular'
+    tag?: string
+    search?: string
+  }): Promise<{ works: PlazaWork[]; total: number; page: number; page_size: number }> {
+    const response = await axios.get('/platform/api/works', { params })
+    return response.data
+  },
+
+  // 获取单个作品详情
+  async getPlazaWork(workId: string): Promise<PlazaWork> {
+    const response = await axios.get(`/platform/api/works/${workId}`)
+    return response.data
+  },
+
+  // 删除广场作品
+  async deletePlazaWork(workId: string): Promise<{ success: boolean; message: string }> {
+    const response = await axios.delete(`/platform/api/works/${workId}`)
+    return response.data
+  },
+}
+
+// 广场作品类型
+export interface PlazaWork {
+  id: string
+  title: string
+  description: string
+  author: string
+  tags: string
+  file_size: number
+  view_count: number
+  status: string
+  created_at: string
+  updated_at: string
 }
 
 // Provider 类型信息
