@@ -23,11 +23,8 @@ import json
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Agent 系统
-from agents import ChatAgent, ManagerAgent, WorkerAgent
 from agentscope.message import Msg
 from agentscope.pipeline import MsgHub
-from config.agents_config import agents_config_manager, AgentConfig
-from config.manager_config import manager_config_manager
 from api.agents_api import router as agents_router
 from api.providers_api import router as providers_router
 from api.tools_api import router as tools_router
@@ -43,21 +40,8 @@ GAME_CONFIG_PATH = os.path.join(
     "rpg-frontend", "public", "assets", "game-config.json"
 )
 
-# ============== 场景描述注入状态 ==============
-_scene_inject_state = {
-    "last_scene_key": None,
-    "last_scene_desc": None,
-}
-
-# ============== 全局状态 ==============
-system_state = {
-    "initialized": False,
-    "agents": [],  # Agent 实例列表 (兼容模式)
-    "manager": None,  # Manager Agent 实例
-    "workers": [],  # Worker Agent 列表
-    "use_manager_mode": False,  # 是否使用Manager-Worker模式
-    "msghub": None,  # MsgHub 实例
-}
+# ============== Per-user Session 管理 ==============
+from api.session_manager import session_manager, UserSession
 
 # ============== 命令行参数 ==============
 parser = argparse.ArgumentParser(description="RPG Chat API Server")
@@ -164,9 +148,7 @@ def build_frontend():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """应用生命周期管理"""
-    # 启动时初始化
-    print("🚀 正在初始化多 Agent 系统...")
-    await init_system()
+    print("🚀 多 Agent 系统就绪（per-user session 模式，按需初始化）")
 
     # 仅在非开发模式下构建前端
     if BUILD_FRONTEND:
@@ -184,16 +166,15 @@ async def lifespan(app: FastAPI):
     print("🛑 正在关闭系统...")
 
 
-def _get_scene_description() -> str:
-    """读取 game-config.json 获取当前场景描述。
+def _get_scene_description(session: UserSession) -> str:
+    """读取 game-config.json 获取当前场景描述（per-user 场景状态）。
 
     只在场景切换或描述内容变化时返回描述，避免同一场景下重复注入。
     """
-    global _scene_inject_state
     try:
         if not os.path.exists(GAME_CONFIG_PATH):
-            _scene_inject_state["last_scene_key"] = None
-            _scene_inject_state["last_scene_desc"] = None
+            session.last_scene_key = None
+            session.last_scene_desc = None
             return ""
         with open(GAME_CONFIG_PATH, "r", encoding="utf-8") as f:
             config = json.load(f)
@@ -202,172 +183,39 @@ def _get_scene_description() -> str:
         scene = scenes.get(current_scene_key, {})
         desc = scene.get("description", "")
 
-        last_key = _scene_inject_state["last_scene_key"]
-        last_desc = _scene_inject_state["last_scene_desc"]
-
         # 场景未变化且描述未变化，不需要重新注入
-        if current_scene_key == last_key and desc == last_desc:
+        if current_scene_key == session.last_scene_key and desc == session.last_scene_desc:
             return ""
 
         # 更新记录并返回新描述
-        _scene_inject_state["last_scene_key"] = current_scene_key
-        _scene_inject_state["last_scene_desc"] = desc
+        session.last_scene_key = current_scene_key
+        session.last_scene_desc = desc
         return desc
     except Exception as e:
         print(f"⚠️ 读取场景描述失败: {e}")
         return ""
 
 
-def _wrap_message_with_scene(message: str) -> str:
+def _wrap_message_with_scene(message: str, session: UserSession) -> str:
     """将用户消息包装上场景描述前缀。只在场景变化时注入一次。"""
-    scene_desc = _get_scene_description()
+    scene_desc = _get_scene_description(session)
     if not scene_desc:
         return message
     return f"【场景背景】{scene_desc}\n\n{message}"
 
 
-async def init_system():
-    """初始化多 Agent 系统 - 支持 Manager-Worker 模式"""
-    print("🚀 Initializing multi-agent system...")
+async def _get_user_session(request: Request) -> UserSession:
+    """从请求中获取当前用户的 session（按需初始化）"""
+    from auth.dependencies import get_current_user
 
-    if system_state["initialized"]:
-        print("   System already initialized, skipping...")
-        return
+    user = await get_current_user(request)
+    user_id = user["id"]
+    session = session_manager.get_session(user_id)
 
-    # 重置状态
-    system_state["agents"] = []
-    system_state["manager"] = None
-    system_state["workers"] = []
-    system_state["use_manager_mode"] = False
+    if not session.initialized:
+        await session_manager.init_user_session(user_id)
 
-    # 重置场景注入状态，确保重新初始化后第一次消息会注入场景描述
-    global _scene_inject_state
-    _scene_inject_state["last_scene_key"] = None
-    _scene_inject_state["last_scene_desc"] = None
-
-    # 获取 Manager 配置
-    manager_config = manager_config_manager.get_config()
-
-    # 获取 Worker Agent 配置
-    worker_configs = agents_config_manager.get_active_agents()
-    print(f"   Found {len(worker_configs)} active worker configs")
-    print(f"   Manager config: is_active={manager_config.is_active}, provider_id={manager_config.provider_id}")
-
-    # 如果 Manager 已启用且配置了 Provider，使用 Manager-Worker 模式
-    if manager_config.is_active and manager_config.provider_id:
-        system_state["use_manager_mode"] = True
-        await _init_manager_worker_mode(manager_config, worker_configs)
-    else:
-        # 使用传统 MsgHub 模式
-        system_state["use_manager_mode"] = False
-        await _init_msghub_mode(worker_configs)
-
-    system_state["initialized"] = True
-    print("✅ 多 Agent 系统初始化完成")
-
-
-async def _init_manager_worker_mode(manager_config: Any, worker_configs: List[AgentConfig]):
-    """初始化 Manager-Worker 模式"""
-    print("🔧 使用 Manager-Worker 协作模式")
-
-    from providers import provider_manager
-
-    # 创建 Manager
-    provider = provider_manager.get_provider(manager_config.provider_id)
-
-    if provider and provider.api_key:
-        try:
-            llm_config = manager_config.to_llm_config()
-            print(f"👔 创建 Manager: {manager_config.name}")
-
-            manager = ManagerAgent(
-                name=manager_config.name,
-                role=manager_config.role,
-                personality=manager_config.personality,
-                llm_config=llm_config,
-                skill_names=[],  # Manager 暂时不配置 skills，后续可扩展
-            )
-            system_state["manager"] = manager
-        except Exception as e:
-            print(f"⚠️ 创建 Manager {manager_config.name} 失败: {e}")
-
-    # 创建 Workers
-    workers = []
-    for config in worker_configs:
-        provider = provider_manager.get_provider(config.provider_id)
-        if not provider or not provider.api_key:
-            print(f"⚠️ Worker {config.name} 配置不完整，跳过")
-            continue
-
-        try:
-            llm_config = config.to_llm_config()
-            print(f"🛠️  创建 Worker: {config.name} ({config.specialty}), skills={config.skill_ids}")
-
-            worker = WorkerAgent(
-                name=config.name,
-                role=config.role,
-                personality=config.personality,
-                specialty=config.specialty or "通用任务",
-                expertise=config.expertise or config.role,
-                llm_config=llm_config,
-                skill_names=config.skill_ids,
-            )
-            workers.append(worker)
-        except Exception as e:
-            print(f"⚠️ 创建 Worker {config.name} 失败: {e}")
-            continue
-
-    # 注册 Workers 到 Manager
-    if system_state["manager"]:
-        for worker in workers:
-            system_state["manager"].register_worker(worker)
-
-    system_state["workers"] = workers
-
-    # 将 Manager 也放入 agents 列表用于前端显示
-    if system_state["manager"]:
-        system_state["agents"] = [system_state["manager"]] + workers
-
-    print(f"✅ Manager-Worker 模式就绪: 1 Manager, {len(workers)} Workers")
-
-
-async def _init_msghub_mode(worker_configs: List[AgentConfig]):
-    """初始化传统 MsgHub 模式"""
-    print("🔧 使用传统 MsgHub 协作模式")
-
-    agents = []
-    for config in worker_configs:
-        from providers import provider_manager
-        provider = provider_manager.get_provider(config.provider_id)
-        if not provider:
-            print(f"⚠️ Agent {config.name} 的 Provider {config.provider_id} 不存在，跳过")
-            continue
-
-        if not provider.api_key:
-            print(f"⚠️ Agent {config.name} 的 Provider 未配置 API Key，跳过")
-            continue
-
-        try:
-            llm_config = config.to_llm_config()
-            print(f"🤖 创建 Agent: {config.name} ({config.role}) - 使用模型 {provider.model_id}")
-
-            agent = ChatAgent(
-                name=config.name,
-                role=config.role,
-                personality=config.personality,
-                llm_config=llm_config,
-                skill_names=config.skill_ids,
-            )
-            agents.append(agent)
-        except Exception as e:
-            print(f"⚠️ 创建 Agent {config.name} 失败: {e}")
-            continue
-
-    system_state["agents"] = agents
-
-    print(f"✅ 已创建 {len(agents)} 个 Agent:")
-    for agent in agents:
-        print(f"   - {agent.name} ({agent.role})")
+    return session
 
 
 # ============== FastAPI 应用 ==============
@@ -472,29 +320,21 @@ async def list_agents(request: Request):
 
 
 @app.post("/api/system/reinitialize")
-async def reinitialize():
-    """重新初始化系统"""
+async def reinitialize(request: Request):
+    """重新初始化当前用户的 Agent 会话"""
+    from auth.dependencies import get_current_user
+
     try:
-        print("🔄 Reinitializing system...")
-        # 重置所有系统状态
-        system_state["initialized"] = False
-        system_state["agents"] = []
-        system_state["manager"] = None
-        system_state["workers"] = []
-        system_state["use_manager_mode"] = False
+        user = await get_current_user(request)
+    except Exception:
+        raise HTTPException(status_code=401, detail="未登录")
 
-        # 重新加载 Provider 和 Agent 配置
-        print("📋 Reloading configs...")
-        from providers import provider_manager
-        from config.manager_config import manager_config_manager
-        provider_manager._load_config()
-        agents_config_manager._load_config()
-        manager_config_manager._load_config()
-
-        await init_system()
-
-        agent_count = len(system_state["agents"])
-        print(f"✅ System reinitialized with {agent_count} agents")
+    user_id = user["id"]
+    try:
+        print(f"🔄 Reinitializing session for user={user_id}...")
+        session = await session_manager.reinitialize_user_session(user_id)
+        agent_count = len(session.agents)
+        print(f"✅ Session reinitialized: user={user_id}, agents={agent_count}")
 
         return {
             "success": True,
@@ -502,37 +342,42 @@ async def reinitialize():
             "agent_count": agent_count,
         }
     except Exception as e:
-        print(f"❌ Reinitialization failed: {e}")
+        print(f"❌ Reinitialization failed for user={user_id}: {e}")
         raise HTTPException(status_code=500, detail=f"重新初始化失败: {str(e)}")
 
 
 @app.post("/api/chat", response_model=ChatResponse)
-async def chat(request: ChatRequest):
-    """聊天接口 - 支持 Manager-Worker 和 MsgHub 两种模式"""
-    if not system_state["initialized"]:
-        raise HTTPException(status_code=503, detail="系统未初始化")
+async def chat(request: Request, chat_request: ChatRequest):
+    """聊天接口 - 支持 Manager-Worker 和 MsgHub 两种模式（per-user session）"""
+    try:
+        session = await _get_user_session(request)
+    except Exception:
+        raise HTTPException(status_code=401, detail="未登录，无法使用聊天功能")
+
+    if not session.initialized:
+        raise HTTPException(status_code=503, detail="用户会话未初始化")
 
     try:
-        # 根据模式选择处理方式
-        if system_state["use_manager_mode"] and system_state["manager"]:
-            return await _chat_with_manager(request)
+        if session.use_manager_mode and session.manager:
+            return await _chat_with_manager(chat_request, session)
         else:
-            return await _chat_with_msghub(request)
-
+            return await _chat_with_msghub(chat_request, session)
+    except HTTPException:
+        raise
     except Exception as e:
         error_detail = f"对话失败: {str(e)}\n\n详细错误:\n{traceback.format_exc()}"
         print(error_detail)
         raise HTTPException(status_code=500, detail=error_detail)
 
 
-async def _chat_with_manager(request: ChatRequest) -> ChatResponse:
+async def _chat_with_manager(chat_request: ChatRequest, session: UserSession) -> ChatResponse:
     """使用 Manager-Worker 模式处理对话"""
-    manager = system_state["manager"]
+    manager = session.manager
 
     # 注入场景描述到用户消息中
-    wrapped_message = _wrap_message_with_scene(request.message)
+    wrapped_message = _wrap_message_with_scene(chat_request.message, session)
     user_msg = Msg(name="User", content=wrapped_message, role="user")
-    print(f"\n👤 [UserMsg → Manager] {wrapped_message[:500]}...")
+    print(f"\n👤 [UserMsg → Manager] user={session.user_id} {wrapped_message[:500]}...")
 
     # Manager 分析任务并分派给 Workers
     response = await manager.reply(user_msg)
@@ -580,9 +425,9 @@ async def _chat_with_manager(request: ChatRequest) -> ChatResponse:
     return ChatResponse(responses=responses)
 
 
-async def _chat_with_msghub(request: ChatRequest) -> ChatResponse:
+async def _chat_with_msghub(chat_request: ChatRequest, session: UserSession) -> ChatResponse:
     """使用传统 MsgHub 模式处理对话"""
-    agents = system_state["agents"]
+    agents = session.agents
     if not agents:
         raise HTTPException(status_code=400, detail="未配置任何可用的 Agent")
 
@@ -592,9 +437,9 @@ async def _chat_with_msghub(request: ChatRequest) -> ChatResponse:
         # 让第一个 Agent 主导对话
         primary_agent = agents[0]
         # 注入场景描述到用户消息中
-        wrapped_message = _wrap_message_with_scene(request.message)
+        wrapped_message = _wrap_message_with_scene(chat_request.message, session)
         user_msg = Msg(name="User", content=wrapped_message, role="user")
-        print(f"\n👤 [UserMsg → {primary_agent.name}] {wrapped_message[:500]}...")
+        print(f"\n👤 [UserMsg → {primary_agent.name}] user={session.user_id} {wrapped_message[:500]}...")
         response = await primary_agent(user_msg)
 
         # 提取响应内容
@@ -620,7 +465,7 @@ async def _chat_with_msghub(request: ChatRequest) -> ChatResponse:
 
         # 其他 Agent 也参与对话
         for agent in agents[1:]:
-            agent_msg = Msg(name="User", content=request.message, role="user")
+            agent_msg = Msg(name="User", content=chat_request.message, role="user")
             agent_response = await agent(agent_msg)
 
             content = agent_response.content
@@ -647,21 +492,26 @@ async def _chat_with_msghub(request: ChatRequest) -> ChatResponse:
 
 
 @app.post("/api/chat/stream")
-async def chat_stream(request: ChatRequest):
-    """流式聊天接口 - 使用 Server-Sent Events"""
-    if not system_state["initialized"]:
-        raise HTTPException(status_code=503, detail="系统未初始化")
+async def chat_stream(request: Request, chat_request: ChatRequest):
+    """流式聊天接口 - 使用 Server-Sent Events（per-user session）"""
+    try:
+        session = await _get_user_session(request)
+    except Exception:
+        raise HTTPException(status_code=401, detail="未登录，无法使用聊天功能")
+
+    if not session.initialized:
+        raise HTTPException(status_code=503, detail="用户会话未初始化")
 
     async def generate_stream():
         """生成流式响应"""
         try:
-            if system_state["use_manager_mode"] and system_state["manager"]:
+            if session.use_manager_mode and session.manager:
                 # Manager-Worker 模式流式输出 - 展示中间过程
-                manager = system_state["manager"]
+                manager = session.manager
                 # 注入场景描述到用户消息中
-                wrapped_message = _wrap_message_with_scene(request.message)
+                wrapped_message = _wrap_message_with_scene(chat_request.message, session)
                 user_msg = Msg(name="User", content=wrapped_message, role="user")
-                print(f"\n👤 [UserMsg → Manager] {wrapped_message[:500]}...")
+                print(f"\n👤 [UserMsg → Manager] user={session.user_id} {wrapped_message[:500]}...")
 
                 event_queue = asyncio.Queue()
 
@@ -741,7 +591,7 @@ async def chat_stream(request: ChatRequest):
 
             else:
                 # MsgHub 模式 - 支持多 Agent 流式输出
-                agents = system_state["agents"]
+                agents = session.agents
                 if not agents:
                     yield f"data: {json.dumps({'type': 'error', 'message': '未配置任何可用的 Agent'})}\n\n"
                     return
@@ -749,9 +599,9 @@ async def chat_stream(request: ChatRequest):
                 async with MsgHub(participants=agents, enable_auto_broadcast=True):
                     for idx, agent in enumerate(agents):
                         # 注入场景描述到用户消息中
-                        wrapped_message = _wrap_message_with_scene(request.message)
+                        wrapped_message = _wrap_message_with_scene(chat_request.message, session)
                         user_msg = Msg(name="User", content=wrapped_message, role="user")
-                        print(f"\n👤 [UserMsg → {agent.name}] {wrapped_message[:500]}...")
+                        print(f"\n👤 [UserMsg → {agent.name}] user={session.user_id} {wrapped_message[:500]}...")
 
                         # 发送 Agent 开始事件
                         yield f"data: {json.dumps({'type': 'agent_start', 'agent_name': agent.name, 'agent_role': agent.role, 'index': idx})}\n\n"
@@ -805,11 +655,8 @@ async def health_check():
     """健康检查"""
     return {
         "status": "healthy",
-        "initialized": system_state["initialized"],
-        "agent_count": len(system_state.get("agents", [])),
-        "mode": "manager-worker" if system_state.get("use_manager_mode") else "msghub",
-        "manager": system_state["manager"].name if system_state.get("manager") else None,
-        "worker_count": len(system_state.get("workers", [])),
+        "active_sessions": session_manager.active_count,
+        "mode": "per-user-session",
     }
 
 
