@@ -10,7 +10,7 @@ import traceback
 from contextlib import asynccontextmanager
 from typing import List, Optional, Dict, Any
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, StreamingResponse
@@ -425,15 +425,26 @@ app.mount("/platform", platform_app)
 # ============== API 端点 ==============
 
 @app.get("/api/agents", response_model=AgentListResponse)
-async def list_agents():
-    """获取所有启用的 Agent 信息（包含 Manager）"""
-    from config.manager_config import manager_config_manager
+async def list_agents(request: Request):
+    """获取当前用户启用的 Agent 信息（包含 Manager）"""
+    from auth.dependencies import get_current_user
+    from auth.user_managers import get_user_agents_manager, get_user_manager_config
+
+    # 获取当前用户
+    try:
+        user = await get_current_user(request)
+    except Exception:
+        return AgentListResponse(agents=[])
+
+    # 获取用户专属的配置管理器
+    user_agents_mgr = get_user_agents_manager(user["id"])
+    user_manager_mgr = get_user_manager_config(user["id"])
 
     # 获取 Worker Agents
-    worker_agents = agents_config_manager.get_active_agents()
+    worker_agents = user_agents_mgr.get_active_agents()
 
     # 获取 Manager 配置
-    manager_config = manager_config_manager.get_config()
+    manager_config = user_manager_mgr.get_config()
 
     result_agents = []
 

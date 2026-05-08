@@ -124,12 +124,13 @@ function App() {
   const [activeAgents, setActiveAgents] = useState<string[]>([])
   const [gameConfig, setGameConfig] = useState<GameConfig | null>(null)
 
-  // 加载游戏配置
+  // 加载游戏配置（登录后才加载）
   useEffect(() => {
+    if (!isLoggedIn) return
     api.getGameConfig()
       .then(cfg => setGameConfig(cfg))
       .catch(err => console.error('Failed to load game config:', err))
-  }, [])
+  }, [isLoggedIn])
 
   // 同步agents状态到ref，确保Phaser初始化时能获取最新值
   useEffect(() => {
@@ -196,8 +197,9 @@ function App() {
   // 流式输出状态
   const [isChatCollapsed, setIsChatCollapsed] = useState(false)
 
-  // 获取 Agent 列表
+  // 获取 Agent 列表（登录后才获取）
   useEffect(() => {
+    if (!isLoggedIn) return
     const fetchAgents = async () => {
       try {
         console.log('Fetching agents for page:', currentPage)
@@ -209,7 +211,7 @@ function App() {
       }
     }
     fetchAgents()
-  }, [currentPage])
+  }, [currentPage, isLoggedIn])
 
   // 监听 agent 更新事件（从配置页面返回时刷新）
   useEffect(() => {
