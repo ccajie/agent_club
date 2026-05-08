@@ -2453,17 +2453,50 @@ html, body, #root {
   display: flex;
   justify-content: center;
   align-items: center;
-  background: #0f0c29;
-  background: linear-gradient(135deg, #0f0c29 0%, #1a1a3e 50%, #24243e 100%);
+  position: relative;
+  overflow: hidden;
+}
+
+.login-bg {
+  position: absolute;
+  inset: 0;
+  background: url('/assets/maps/libmap.png') center center;
+  background-size: cover;
+  image-rendering: pixelated;
+  transform: scale(1.05);
+  filter: brightness(0.4) saturate(1.2);
+  z-index: 0;
+}
+
+.login-bg-overlay {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse at center, rgba(15,12,41,0.3) 0%, rgba(15,12,41,0.85) 100%);
+  z-index: 1;
 }
 
 .login-card {
+  position: relative;
+  z-index: 2;
   width: 380px;
-  background: rgba(255,255,255,0.03);
-  border: 1px solid rgba(255,255,255,0.1);
+  background: rgba(15, 12, 41, 0.75);
+  border: 1px solid rgba(255,255,255,0.12);
   border-radius: 12px;
   padding: 40px 32px;
-  backdrop-filter: blur(10px);
+  backdrop-filter: blur(16px);
+  box-shadow: 0 20px 60px rgba(0,0,0,0.5), 0 0 80px rgba(78,205,196,0.05);
+  animation: login-card-enter 0.5s ease-out;
+}
+
+@keyframes login-card-enter {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .login-header {
@@ -2473,15 +2506,17 @@ html, body, #root {
 
 .login-header h1 {
   color: #fff;
-  font-size: 24px;
-  margin: 0 0 6px;
-  letter-spacing: 1px;
+  font-size: 26px;
+  margin: 0 0 8px;
+  letter-spacing: 2px;
+  text-shadow: 0 0 20px rgba(78,205,196,0.3);
 }
 
 .login-header p {
-  color: rgba(255,255,255,0.4);
+  color: rgba(255,255,255,0.5);
   font-size: 13px;
   margin: 0;
+  letter-spacing: 1px;
 }
 
 .login-tabs {

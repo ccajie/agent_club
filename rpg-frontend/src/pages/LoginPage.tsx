@@ -42,10 +42,12 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps) {
 
   return (
     <div className="login-page">
+      <div className="login-bg" />
+      <div className="login-bg-overlay" />
       <div className="login-card">
         <div className="login-header">
           <h1>Agent Club</h1>
-          <p>多智能体协作平台</p>
+          <p>多智能体 RPG 协作平台</p>
         </div>
 
         <div className="login-tabs">
