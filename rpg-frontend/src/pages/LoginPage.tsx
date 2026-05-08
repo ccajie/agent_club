@@ -3,6 +3,7 @@
  */
 import { useState } from 'react'
 import { api } from '../api'
+import { TilemapBackground } from '../components/TilemapBackground'
 
 interface LoginPageProps {
   onLoginSuccess: (user: { id: string; username: string; nickname: string }) => void
@@ -42,7 +43,10 @@ export function LoginPage({ onLoginSuccess }: LoginPageProps) {
 
   return (
     <div className="login-page">
-      <div className="login-bg" />
+      <TilemapBackground
+        mapPath="/assets/maps/library.tmj"
+        tilesetPath="/assets/maps/libmap.png"
+      />
       <div className="login-bg-overlay" />
       <div className="login-card">
         <div className="login-header">
