@@ -2,10 +2,11 @@
 """API routes for skill management."""
 
 from typing import Optional
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel, Field
 
 from skills import skill_registry
+from auth.dependencies import get_current_user
 
 router = APIRouter(prefix="/api/skills", tags=["skills"])
 
@@ -16,7 +17,7 @@ class UpdateSkillRequest(BaseModel):
 
 
 @router.get("")
-async def list_skills(include_disabled: bool = False):
+async def list_skills(include_disabled: bool = False, user: dict = Depends(get_current_user)):
     """获取所有技能列表"""
     skills = skill_registry.list_skills(include_disabled=include_disabled)
     return {
@@ -26,7 +27,7 @@ async def list_skills(include_disabled: bool = False):
 
 
 @router.get("/{skill_name}")
-async def get_skill(skill_name: str):
+async def get_skill(skill_name: str, user: dict = Depends(get_current_user)):
     """获取单个技能详情"""
     skill = skill_registry.get_skill(skill_name)
     if not skill:
@@ -38,7 +39,7 @@ async def get_skill(skill_name: str):
 
 
 @router.put("/{skill_name}")
-async def update_skill(skill_name: str, request: UpdateSkillRequest):
+async def update_skill(skill_name: str, request: UpdateSkillRequest, user: dict = Depends(get_current_user)):
     """更新技能启用状态"""
     success = skill_registry.set_skill_enabled(skill_name, request.is_enabled)
     if not success:
@@ -52,7 +53,7 @@ async def update_skill(skill_name: str, request: UpdateSkillRequest):
 
 
 @router.post("/{skill_name}/enable")
-async def enable_skill(skill_name: str):
+async def enable_skill(skill_name: str, user: dict = Depends(get_current_user)):
     """启用技能"""
     success = skill_registry.set_skill_enabled(skill_name, True)
     if not success:
@@ -66,7 +67,7 @@ async def enable_skill(skill_name: str):
 
 
 @router.post("/{skill_name}/disable")
-async def disable_skill(skill_name: str):
+async def disable_skill(skill_name: str, user: dict = Depends(get_current_user)):
     """禁用技能"""
     success = skill_registry.set_skill_enabled(skill_name, False)
     if not success:

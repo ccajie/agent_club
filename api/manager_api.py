@@ -2,10 +2,11 @@
 """API routes for Manager Agent configuration."""
 
 from typing import Optional
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel, Field
 
-from config.manager_config import manager_config_manager, ManagerConfig
+from auth.dependencies import get_current_user
+from auth.user_managers import get_user_manager_config, get_user_provider_manager
 
 router = APIRouter(prefix="/api/manager", tags=["manager"])
 
@@ -27,16 +28,19 @@ class TestConnectionResponse(BaseModel):
 
 
 @router.get("")
-async def get_manager_config():
+async def get_manager_config(user: dict = Depends(get_current_user)):
     """获取 Manager 配置"""
-    return manager_config_manager.to_info()
+    manager_mgr = get_user_manager_config(user["id"])
+    provider_mgr = get_user_provider_manager(user["id"])
+    return manager_mgr.to_info(provider_manager=provider_mgr)
 
 
 @router.put("")
-async def update_manager_config(request: UpdateManagerRequest):
+async def update_manager_config(request: UpdateManagerRequest, user: dict = Depends(get_current_user)):
     """更新 Manager 配置"""
+    manager_mgr = get_user_manager_config(user["id"])
     update_data = {k: v for k, v in request.model_dump().items() if v is not None}
-    config = manager_config_manager.update_config(update_data)
+    config = manager_mgr.update_config(update_data)
 
     return {
         "id": "manager_default",
@@ -51,21 +55,21 @@ async def update_manager_config(request: UpdateManagerRequest):
 
 
 @router.post("/test")
-async def test_manager_connection():
+async def test_manager_connection(user: dict = Depends(get_current_user)):
     """测试 Manager 的模型连接"""
-    config = manager_config_manager.get_config()
+    manager_mgr = get_user_manager_config(user["id"])
+    provider_mgr = get_user_provider_manager(user["id"])
+
+    config = manager_mgr.get_config()
 
     if not config.provider_id:
         return TestConnectionResponse(success=False, message="未配置 Provider")
 
-    # 通过 provider_id 获取 Provider 信息
-    from providers import provider_manager
-    provider = provider_manager.get_provider(config.provider_id)
+    provider = provider_mgr.get_provider(config.provider_id)
 
     if not provider:
         return TestConnectionResponse(success=False, message=f"Provider {config.provider_id} 不存在")
 
-    # 导入测试连接函数
     from providers import test_model_connection
 
     success, message = await test_model_connection(

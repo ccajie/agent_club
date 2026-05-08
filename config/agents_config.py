@@ -10,11 +10,11 @@ from pydantic import BaseModel, Field
 from datetime import datetime
 from skills import skill_registry
 
-# 配置文件路径 - 放在项目根目录
-CONFIG_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "agents_config.json")
+# 默认配置文件路径（向后兼容）
+DEFAULT_CONFIG_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "agents_config.json")
 
 # 确保 data 目录存在
-os.makedirs(os.path.dirname(CONFIG_FILE), exist_ok=True)
+os.makedirs(os.path.dirname(DEFAULT_CONFIG_FILE), exist_ok=True)
 
 
 class AgentConfig(BaseModel):
@@ -41,10 +41,12 @@ class AgentConfig(BaseModel):
     updated_at: str = Field(default_factory=lambda: datetime.now().isoformat())
     is_active: bool = Field(default=True, description="是否启用")
 
-    def to_info(self, mask_secret: bool = True) -> Dict[str, Any]:
+    def to_info(self, mask_secret: bool = True, provider_manager=None) -> Dict[str, Any]:
         """转换为信息字典"""
         # 获取 provider 信息
-        from providers import provider_manager
+        if provider_manager is None:
+            from providers import provider_manager as _pm
+            provider_manager = _pm
         provider = provider_manager.get_provider(self.provider_id)
         provider_info = None
         if provider:
@@ -99,15 +101,17 @@ class AgentConfig(BaseModel):
 class AgentsConfigManager:
     """Agent 配置管理器"""
 
-    def __init__(self):
+    def __init__(self, config_file: str = None):
+        self._config_file = config_file or DEFAULT_CONFIG_FILE
+        os.makedirs(os.path.dirname(self._config_file), exist_ok=True)
         self.agents: Dict[str, AgentConfig] = {}
         self._load_config()
 
     def _load_config(self):
         """从文件加载配置"""
-        if os.path.exists(CONFIG_FILE):
+        if os.path.exists(self._config_file):
             try:
-                with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
+                with open(self._config_file, 'r', encoding='utf-8') as f:
                     data = json.load(f)
                     for agent_data in data.get("agents", []):
                         agent = AgentConfig(**agent_data)
@@ -115,10 +119,8 @@ class AgentsConfigManager:
                 print(f"✅ 已加载 {len(self.agents)} 个 Agent 配置")
             except Exception as e:
                 print(f"⚠️ 加载 Agent 配置失败: {e}")
-                # 加载失败时创建空配置
                 self._create_empty_config()
         else:
-            print("📄 Agent 配置文件不存在，创建空配置")
             self._create_empty_config()
 
     def _save_config(self):
@@ -127,7 +129,7 @@ class AgentsConfigManager:
             data = {
                 "agents": [agent.model_dump() for agent in self.agents.values()]
             }
-            with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
+            with open(self._config_file, 'w', encoding='utf-8') as f:
                 json.dump(data, f, ensure_ascii=False, indent=2)
             return True
         except Exception as e:

@@ -2,17 +2,14 @@
 """API routes for providers configuration."""
 
 from typing import Optional
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel, Field
 
 from providers import ProviderManager, ProviderType
+from auth.dependencies import get_current_user
+from auth.user_managers import get_user_provider_manager
 
 router = APIRouter(prefix="/api/providers", tags=["providers"])
-
-
-def get_provider_manager() -> ProviderManager:
-    """Get the provider manager instance."""
-    return ProviderManager()
 
 
 class CreateProviderRequest(BaseModel):
@@ -46,9 +43,9 @@ class TestConnectionResponse(BaseModel):
 
 
 @router.get("")
-async def list_providers():
+async def list_providers(user: dict = Depends(get_current_user)):
     """List all configured providers."""
-    manager = get_provider_manager()
+    manager = get_user_provider_manager(user["id"])
     providers = manager.list_providers()
     active = manager.get_active_provider()
     return {
@@ -58,9 +55,9 @@ async def list_providers():
 
 
 @router.post("")
-async def create_provider(request: CreateProviderRequest):
+async def create_provider(request: CreateProviderRequest, user: dict = Depends(get_current_user)):
     """Create a new provider."""
-    manager = get_provider_manager()
+    manager = get_user_provider_manager(user["id"])
     try:
         provider = manager.add_provider(request.model_dump())
         return provider.to_info(mask_secret=True)
@@ -69,9 +66,9 @@ async def create_provider(request: CreateProviderRequest):
 
 
 @router.put("/{provider_id}")
-async def update_provider(provider_id: str, request: UpdateProviderRequest):
+async def update_provider(provider_id: str, request: UpdateProviderRequest, user: dict = Depends(get_current_user)):
     """Update a provider."""
-    manager = get_provider_manager()
+    manager = get_user_provider_manager(user["id"])
     # Get non-null values
     update_data = {k: v for k, v in request.model_dump().items() if v is not None}
     provider = manager.update_provider(provider_id, update_data)
@@ -81,9 +78,9 @@ async def update_provider(provider_id: str, request: UpdateProviderRequest):
 
 
 @router.delete("/{provider_id}")
-async def delete_provider(provider_id: str):
+async def delete_provider(provider_id: str, user: dict = Depends(get_current_user)):
     """Delete a provider."""
-    manager = get_provider_manager()
+    manager = get_user_provider_manager(user["id"])
     success = manager.delete_provider(provider_id)
     if not success:
         raise HTTPException(status_code=404, detail="Provider not found")
@@ -91,18 +88,17 @@ async def delete_provider(provider_id: str):
 
 
 @router.post("/{provider_id}/test")
-async def test_provider(provider_id: str):
+async def test_provider(provider_id: str, user: dict = Depends(get_current_user)):
     """Test a provider connection."""
-    manager = get_provider_manager()
-    import asyncio
+    manager = get_user_provider_manager(user["id"])
     success, message = await manager.test_provider(provider_id)
     return TestConnectionResponse(success=success, message=message)
 
 
 @router.post("/active")
-async def set_active_provider(request: SetActiveRequest):
+async def set_active_provider(request: SetActiveRequest, user: dict = Depends(get_current_user)):
     """Set the active provider."""
-    manager = get_provider_manager()
+    manager = get_user_provider_manager(user["id"])
     success = manager.set_active_provider(request.provider_id)
     if not success:
         raise HTTPException(status_code=404, detail="Provider not found")
@@ -115,9 +111,9 @@ async def set_active_provider(request: SetActiveRequest):
 
 
 @router.get("/active")
-async def get_active_provider():
+async def get_active_provider(user: dict = Depends(get_current_user)):
     """Get the currently active provider."""
-    manager = get_provider_manager()
+    manager = get_user_provider_manager(user["id"])
     provider = manager.get_active_provider()
     if not provider:
         return {"active_provider": None}
@@ -135,7 +131,7 @@ class TestConnectionRequest(BaseModel):
 
 
 @router.post("/test-connection")
-async def test_connection_temp(request: TestConnectionRequest):
+async def test_connection_temp(request: TestConnectionRequest, user: dict = Depends(get_current_user)):
     """Test connection without saving (temporary provider)."""
     from providers import DashScopeProvider, AnthropicProvider, KimiCodeProvider
 
@@ -208,9 +204,9 @@ async def get_provider_types():
 # ========== Embedding Provider Endpoints ==========
 
 @router.get("/embedding")
-async def get_embedding_provider():
+async def get_embedding_provider(user: dict = Depends(get_current_user)):
     """Get the currently active embedding provider."""
-    manager = get_provider_manager()
+    manager = get_user_provider_manager(user["id"])
     provider = manager.get_embedding_provider()
     return {
         "embedding_provider": provider.to_info(mask_secret=True) if provider else None,
@@ -218,9 +214,9 @@ async def get_embedding_provider():
 
 
 @router.post("/embedding")
-async def set_embedding_provider(request: SetActiveRequest):
+async def set_embedding_provider(request: SetActiveRequest, user: dict = Depends(get_current_user)):
     """Set the active embedding provider."""
-    manager = get_provider_manager()
+    manager = get_user_provider_manager(user["id"])
     success = manager.set_embedding_provider(request.provider_id)
     if not success:
         raise HTTPException(status_code=404, detail="Provider not found")

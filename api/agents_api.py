@@ -2,10 +2,11 @@
 """API routes for agents configuration."""
 
 from typing import Optional, List
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel, Field
 
-from config.agents_config import agents_config_manager, AgentConfig
+from auth.dependencies import get_current_user
+from auth.user_managers import get_user_agents_manager, get_user_manager_config, get_user_provider_manager
 
 router = APIRouter(prefix="/api/agents-config", tags=["agents-config"])
 
@@ -42,19 +43,21 @@ class TestConnectionResponse(BaseModel):
 
 
 @router.get("")
-async def list_agents(include_inactive: bool = False):
+async def list_agents(include_inactive: bool = False, user: dict = Depends(get_current_user)):
     """获取所有 Agent 配置（包含 Manager）"""
-    from config.manager_config import manager_config_manager
+    agents_mgr = get_user_agents_manager(user["id"])
+    manager_mgr = get_user_manager_config(user["id"])
 
-    agents = agents_config_manager.list_agents(include_inactive=include_inactive)
+    provider_mgr = get_user_provider_manager(user["id"])
+    agents = agents_mgr.list_agents(include_inactive=include_inactive)
 
     # 添加 Manager 配置作为特殊 Agent
-    manager_info = manager_config_manager.to_info()
+    manager_info = manager_mgr.to_info(provider_manager=provider_mgr)
 
-    print(f"📋 API list_agents called, include_inactive={include_inactive}, found {len(agents)} workers, manager_active={manager_info['is_active']}")
+    print(f"📋 API list_agents called, user={user['id']}, include_inactive={include_inactive}, found {len(agents)} workers, manager_active={manager_info['is_active']}")
 
     # 将 Manager 放在列表最前面
-    all_agents = [manager_info] + [agent.to_info(mask_secret=True) for agent in agents]
+    all_agents = [manager_info] + [agent.to_info(mask_secret=True, provider_manager=provider_mgr) for agent in agents]
 
     return {
         "agents": all_agents
@@ -62,60 +65,67 @@ async def list_agents(include_inactive: bool = False):
 
 
 @router.post("")
-async def create_agent(request: CreateAgentRequest):
+async def create_agent(request: CreateAgentRequest, user: dict = Depends(get_current_user)):
     """创建新 Agent"""
+    agents_mgr = get_user_agents_manager(user["id"])
     try:
-        print(f"📝 Creating agent: {request.name}")
-        agent = agents_config_manager.create_agent(request.model_dump())
+        provider_mgr = get_user_provider_manager(user["id"])
+        print(f"📝 Creating agent: {request.name} for user={user['id']}")
+        agent = agents_mgr.create_agent(request.model_dump())
         print(f"✅ Agent created: {agent.id}, is_active={agent.is_active}")
-        return agent.to_info(mask_secret=True)
+        return agent.to_info(mask_secret=True, provider_manager=provider_mgr)
     except ValueError as e:
         print(f"❌ Failed to create agent: {e}")
         raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.get("/{agent_id}")
-async def get_agent(agent_id: str):
+async def get_agent(agent_id: str, user: dict = Depends(get_current_user)):
     """获取单个 Agent 配置"""
-    agent = agents_config_manager.get_agent(agent_id)
+    agents_mgr = get_user_agents_manager(user["id"])
+    provider_mgr = get_user_provider_manager(user["id"])
+    agent = agents_mgr.get_agent(agent_id)
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
-    return agent.to_info(mask_secret=True)
+    return agent.to_info(mask_secret=True, provider_manager=provider_mgr)
 
 
 @router.put("/{agent_id}")
-async def update_agent(agent_id: str, request: UpdateAgentRequest):
+async def update_agent(agent_id: str, request: UpdateAgentRequest, user: dict = Depends(get_current_user)):
     """更新 Agent 配置"""
+    agents_mgr = get_user_agents_manager(user["id"])
+    provider_mgr = get_user_provider_manager(user["id"])
     update_data = {k: v for k, v in request.model_dump().items() if v is not None}
-    agent = agents_config_manager.update_agent(agent_id, update_data)
+    agent = agents_mgr.update_agent(agent_id, update_data)
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
-    return agent.to_info(mask_secret=True)
+    return agent.to_info(mask_secret=True, provider_manager=provider_mgr)
 
 
 @router.delete("/{agent_id}")
-async def delete_agent(agent_id: str):
+async def delete_agent(agent_id: str, user: dict = Depends(get_current_user)):
     """删除 Agent"""
-    success = agents_config_manager.delete_agent(agent_id)
+    agents_mgr = get_user_agents_manager(user["id"])
+    success = agents_mgr.delete_agent(agent_id)
     if not success:
         raise HTTPException(status_code=404, detail="Agent not found")
     return {"success": True}
 
 
 @router.post("/{agent_id}/test")
-async def test_agent_connection(agent_id: str):
+async def test_agent_connection(agent_id: str, user: dict = Depends(get_current_user)):
     """测试 Agent 的模型连接"""
-    agent = agents_config_manager.get_agent(agent_id)
+    agents_mgr = get_user_agents_manager(user["id"])
+    provider_mgr = get_user_provider_manager(user["id"])
+
+    agent = agents_mgr.get_agent(agent_id)
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
 
-    # 通过 provider_id 获取 Provider 信息
-    from providers import provider_manager
-    provider = provider_manager.get_provider(agent.provider_id)
+    provider = provider_mgr.get_provider(agent.provider_id)
     if not provider:
         raise HTTPException(status_code=400, detail=f"Provider {agent.provider_id} not found")
 
-    # 导入测试连接函数
     from providers import test_model_connection
 
     success, message = await test_model_connection(
@@ -137,7 +147,7 @@ class TestConnectionRequest(BaseModel):
 
 
 @router.post("/test-connection")
-async def test_connection_temp(request: TestConnectionRequest):
+async def test_connection_temp(request: TestConnectionRequest, user: dict = Depends(get_current_user)):
     """临时测试连接（不保存配置）"""
     from providers import test_model_connection
 
@@ -199,11 +209,7 @@ async def get_provider_types():
 
 @router.get("/provider-models")
 async def get_provider_models():
-    """获取推荐的模型列表 - 从providers目录动态获取"""
-    # 从providers目录导入模型配置
-    from providers import DashScopeProvider, AnthropicProvider, KimiCodeProvider
-
-    # DashScope 模型列表
+    """获取推荐的模型列表"""
     dashscope_models = [
         {"id": "qwen-max", "name": "通义千问 Max", "description": "最强性能"},
         {"id": "qwen-plus", "name": "通义千问 Plus", "description": "均衡选择"},
@@ -211,26 +217,22 @@ async def get_provider_models():
         {"id": "qwen3.5-flash", "name": "通义千问3.5 Flash", "description": "轻量快速"},
     ]
 
-    # Anthropic 协议模型列表
     anthropic_models = [
         {"id": "claude-3-opus-20240229", "name": "Claude 3 Opus", "description": "最强性能"},
         {"id": "claude-3-sonnet-20240229", "name": "Claude 3 Sonnet", "description": "均衡选择"},
         {"id": "claude-3-haiku-20240307", "name": "Claude 3 Haiku", "description": "快速经济"},
     ]
 
-    # OpenAI 官方模型列表
     openai_models = [
         {"id": "gpt-4o", "name": "GPT-4o", "description": "最强性能"},
         {"id": "gpt-4-turbo", "name": "GPT-4 Turbo", "description": "高性能"},
         {"id": "gpt-3.5-turbo", "name": "GPT-3.5 Turbo", "description": "经济选择"},
     ]
 
-    # 自定义模型 - 用户自己输入
     custom_models = [
         {"id": "custom", "name": "自定义模型", "description": "输入任意模型ID"},
     ]
 
-    # KimiCode 模型列表
     kimicode_models = [
         {"id": "kimi-k2.5", "name": "Kimi K2.5", "description": "最强推理能力"},
     ]

@@ -4,8 +4,10 @@
 import json
 import os
 from typing import Any, Dict
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
+
+from auth.dependencies import get_current_user
 
 router = APIRouter(prefix="/api/game-config", tags=["game-config"])
 
@@ -36,20 +38,20 @@ class UpdateCurrentSceneRequest(BaseModel):
 
 
 @router.get("")
-async def get_game_config() -> Dict[str, Any]:
+async def get_game_config(user: dict = Depends(get_current_user)) -> Dict[str, Any]:
     """获取当前游戏配置"""
     return _load_config()
 
 
 @router.put("")
-async def update_game_config(config: Dict[str, Any]) -> Dict[str, Any]:
+async def update_game_config(config: Dict[str, Any], user: dict = Depends(get_current_user)) -> Dict[str, Any]:
     """更新游戏配置（全量替换）"""
     _save_config(config)
     return config
 
 
 @router.put("/current-scene")
-async def update_current_scene(data: UpdateCurrentSceneRequest) -> Dict[str, Any]:
+async def update_current_scene(data: UpdateCurrentSceneRequest, user: dict = Depends(get_current_user)) -> Dict[str, Any]:
     """更新当前场景"""
     config = _load_config()
     if data.currentScene not in config.get("scenes", {}):

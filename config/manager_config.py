@@ -7,11 +7,11 @@ import os
 from typing import Optional, Dict, Any
 from pydantic import BaseModel, Field
 
-# 配置文件路径
-CONFIG_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "manager_config.json")
+# 默认配置文件路径（向后兼容）
+DEFAULT_CONFIG_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "manager_config.json")
 
 # 确保 data 目录存在
-os.makedirs(os.path.dirname(CONFIG_FILE), exist_ok=True)
+os.makedirs(os.path.dirname(DEFAULT_CONFIG_FILE), exist_ok=True)
 
 
 class ManagerConfig(BaseModel):
@@ -47,15 +47,17 @@ class ManagerConfig(BaseModel):
 class ManagerConfigManager:
     """Manager 配置管理器"""
 
-    def __init__(self):
+    def __init__(self, config_file: str = None):
+        self._config_file = config_file or DEFAULT_CONFIG_FILE
+        os.makedirs(os.path.dirname(self._config_file), exist_ok=True)
         self.config: ManagerConfig = ManagerConfig()
         self._load_config()
 
     def _load_config(self):
         """从文件加载配置"""
-        if os.path.exists(CONFIG_FILE):
+        if os.path.exists(self._config_file):
             try:
-                with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
+                with open(self._config_file, 'r', encoding='utf-8') as f:
                     data = json.load(f)
                     self.config = ManagerConfig(**data)
                 print(f"✅ 已加载 Manager 配置: {self.config.name}")
@@ -63,7 +65,6 @@ class ManagerConfigManager:
                 print(f"⚠️ 加载 Manager 配置失败: {e}")
                 self.config = self._create_default_config()
         else:
-            print("📄 Manager 配置文件不存在，创建默认配置")
             self.config = self._create_default_config()
 
     def _create_default_config(self) -> ManagerConfig:
@@ -75,7 +76,7 @@ class ManagerConfigManager:
     def _save_config(self, config: ManagerConfig):
         """保存配置到文件"""
         try:
-            with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
+            with open(self._config_file, 'w', encoding='utf-8') as f:
                 json.dump(config.to_dict(), f, ensure_ascii=False, indent=2)
             return True
         except Exception as e:
@@ -95,9 +96,11 @@ class ManagerConfigManager:
         self._save_config(self.config)
         return self.config
 
-    def to_info(self) -> Dict[str, Any]:
+    def to_info(self, provider_manager=None) -> Dict[str, Any]:
         """转换为信息字典"""
-        from providers import provider_manager
+        if provider_manager is None:
+            from providers import provider_manager as _pm
+            provider_manager = _pm
 
         provider = provider_manager.get_provider(self.config.provider_id)
         provider_info = None

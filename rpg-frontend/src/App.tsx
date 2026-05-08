@@ -9,9 +9,10 @@ import { SkillConfigPage } from './pages/SkillConfigPage'
 import { SceneSelectPage } from './pages/SceneSelectPage'
 import { HtmlPreviewPage } from './pages/HtmlPreviewPage'
 import { PlazaPage } from './pages/PlazaPage'
+import { LoginPage } from './pages/LoginPage'
 import type { ChatMessage, RobotStatus, AgentInfo } from './types'
 import type { GameConfig } from './game/config'
-import { api } from './api'
+import { api, getToken, getSavedUser } from './api'
 
 type Page = 'chat' | 'agents' | 'providers' | 'tools' | 'skills' | 'scenes' | 'preview' | 'plaza'
 
@@ -89,6 +90,29 @@ const ExpandIcon = () => (
 )
 
 function App() {
+  // ========== 认证状态 ==========
+  const [currentUser, setCurrentUser] = useState<{ id: string; username: string; nickname: string } | null>(getSavedUser())
+  const isLoggedIn = !!currentUser && !!getToken()
+
+  // 监听登出事件（401 时自动触发）
+  useEffect(() => {
+    const handleLogout = () => setCurrentUser(null)
+    window.addEventListener('auth:logout', handleLogout)
+    return () => window.removeEventListener('auth:logout', handleLogout)
+  }, [])
+
+  const handleLoginSuccess = (user: { id: string; username: string; nickname: string }) => {
+    setCurrentUser(user)
+  }
+
+  const handleLogout = () => {
+    api.logout()
+    setCurrentUser(null)
+  }
+
+  // 未登录 → 显示登录页（广场除外）
+  // ==========
+
   const gameRef = useRef<Phaser.Game | null>(null)
   const sceneRef = useRef<ChatScene | null>(null)
   const agentsRef = useRef<AgentInfo[]>([])
@@ -379,12 +403,21 @@ function App() {
     })
   }, [robotStatus, activeAgents])
 
+  // 未登录时显示登录页
+  if (!isLoggedIn) {
+    return <LoginPage onLoginSuccess={handleLoginSuccess} />
+  }
+
   return (
     <div className="app">
       {/* 侧边栏 */}
       <nav className="sidebar">
         <div className="sidebar-header">
           <h2>Agent Club</h2>
+          <div className="user-info">
+            <span className="user-nickname">{currentUser?.nickname || currentUser?.username}</span>
+            <button className="logout-btn" onClick={handleLogout} title="退出登录">退出</button>
+          </div>
         </div>
         <div className="sidebar-nav">
           <button

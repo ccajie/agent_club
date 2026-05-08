@@ -15,7 +15,10 @@ from .database import init_db, SessionLocal
 from .models import Work
 from .storage import storage
 
-# 初始化数据库
+# 导入 User 模型确保表被创建
+from auth.models import User  # noqa: F401
+
+# 初始化数据库（创建所有表，包括 users 和 works）
 init_db()
 
 # 创建平台子应用

@@ -55,16 +55,24 @@ class ProviderManager:
 
     _instance = None
 
-    def __new__(cls):
+    def __new__(cls, config_file: str = None):
+        # 如果指定了自定义路径，不使用单例
+        if config_file is not None:
+            instance = super().__new__(cls)
+            instance._initialized = False
+            return instance
+        # 默认单例行为
         if cls._instance is None:
             cls._instance = super().__new__(cls)
             cls._instance._initialized = False
         return cls._instance
 
-    def __init__(self):
+    def __init__(self, config_file: str = None):
         if self._initialized:
             return
         self._initialized = True
+        self._config_file = Path(config_file) if config_file else PROVIDERS_FILE
+        self._config_dir = self._config_file.parent
         self._providers: Dict[str, Provider] = {}
         self._active_provider_id: Optional[str] = None
         self._active_embedding_provider_id: Optional[str] = None
@@ -72,9 +80,9 @@ class ProviderManager:
 
     def _ensure_config_dir(self):
         """Ensure configuration directory exists."""
-        CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+        self._config_dir.mkdir(parents=True, exist_ok=True)
         try:
-            os.chmod(CONFIG_DIR, 0o700)
+            os.chmod(self._config_dir, 0o700)
         except Exception:
             pass
 
@@ -82,9 +90,9 @@ class ProviderManager:
         """Load providers from configuration file."""
         self._ensure_config_dir()
 
-        if PROVIDERS_FILE.exists():
+        if self._config_file.exists():
             try:
-                with open(PROVIDERS_FILE, 'r', encoding='utf-8') as f:
+                with open(self._config_file, 'r', encoding='utf-8') as f:
                     data = json.load(f)
                 config = ProvidersConfig.model_validate(data)
 
@@ -96,7 +104,7 @@ class ProviderManager:
 
                 self._active_provider_id = config.active_provider_id
                 self._active_embedding_provider_id = config.active_embedding_provider_id
-                print(f"✅ Loaded {len(self._providers)} providers from {PROVIDERS_FILE}")
+                print(f"✅ Loaded {len(self._providers)} providers from {self._config_file}")
             except Exception as e:
                 print(f"⚠️ Failed to load providers config: {e}")
                 self._create_default_if_needed()
@@ -168,9 +176,9 @@ class ProviderManager:
                 active_embedding_provider_id=self._active_embedding_provider_id,
             )
 
-            with open(PROVIDERS_FILE, 'w', encoding='utf-8') as f:
+            with open(self._config_file, 'w', encoding='utf-8') as f:
                 json.dump(config.model_dump(), f, ensure_ascii=False, indent=2)
-            os.chmod(PROVIDERS_FILE, 0o600)
+            os.chmod(self._config_file, 0o600)
             return True
         except Exception as e:
             print(f"❌ Failed to save providers config: {e}")

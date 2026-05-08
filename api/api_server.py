@@ -413,6 +413,10 @@ app.include_router(game_config_router)
 # 添加 HTML 预览路由
 app.include_router(html_preview_router)
 
+# 添加认证路由
+from auth.router import router as auth_router
+app.include_router(auth_router)
+
 # 挂载平台子应用（作品发布与广场）
 from plaza_platform.server import platform_app
 app.mount("/platform", platform_app)

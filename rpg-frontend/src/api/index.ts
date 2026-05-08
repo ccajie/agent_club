@@ -31,7 +31,90 @@ const client = axios.create({
   },
 })
 
+// ============ Token 管理 ============
+
+const TOKEN_KEY = 'agent_club_token'
+const USER_KEY = 'agent_club_user'
+
+export function getToken(): string | null {
+  return localStorage.getItem(TOKEN_KEY)
+}
+
+export function setToken(token: string) {
+  localStorage.setItem(TOKEN_KEY, token)
+}
+
+export function clearToken() {
+  localStorage.removeItem(TOKEN_KEY)
+  localStorage.removeItem(USER_KEY)
+}
+
+export function getSavedUser(): { id: string; username: string; nickname: string } | null {
+  const raw = localStorage.getItem(USER_KEY)
+  if (!raw) return null
+  try { return JSON.parse(raw) } catch { return null }
+}
+
+export function setSavedUser(user: { id: string; username: string; nickname: string }) {
+  localStorage.setItem(USER_KEY, JSON.stringify(user))
+}
+
+// axios 拦截器: 自动带 token
+client.interceptors.request.use((config) => {
+  const token = getToken()
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`
+  }
+  return config
+})
+
+// axios 拦截器: 401 时清除 token
+client.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401) {
+      clearToken()
+      window.dispatchEvent(new Event('auth:logout'))
+    }
+    return Promise.reject(error)
+  }
+)
+
 export const api = {
+  // ========== 认证 API ==========
+
+  async register(username: string, password: string, nickname?: string): Promise<{
+    success: boolean; message: string; token?: string; user?: { id: string; username: string; nickname: string }
+  }> {
+    const response = await client.post('/auth/register', { username, password, nickname })
+    if (response.data.token) {
+      setToken(response.data.token)
+      setSavedUser(response.data.user)
+    }
+    return response.data
+  },
+
+  async login(username: string, password: string): Promise<{
+    success: boolean; message: string; token?: string; user?: { id: string; username: string; nickname: string }
+  }> {
+    const response = await client.post('/auth/login', { username, password })
+    if (response.data.token) {
+      setToken(response.data.token)
+      setSavedUser(response.data.user)
+    }
+    return response.data
+  },
+
+  logout() {
+    clearToken()
+    window.dispatchEvent(new Event('auth:logout'))
+  },
+
+  async getMe(): Promise<{ success: boolean; user: { id: string; username: string; nickname: string } }> {
+    const response = await client.get('/auth/me')
+    return response.data
+  },
+
   // ========== 聊天 API ==========
 
   // 聊天 - 返回多 Agent 响应
