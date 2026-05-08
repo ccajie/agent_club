@@ -62,6 +62,10 @@ class UserDataService:
     def skills_config_file(self) -> str:
         return os.path.join(self._data_dir, "skills_config.json")
 
+    @property
+    def game_config_file(self) -> str:
+        return os.path.join(self._data_dir, "game_config.json")
+
     def init_default_data(self):
         """初始化默认用户数据（首次注册时调用）"""
         # 创建空 agents 配置
@@ -85,6 +89,42 @@ class UserDataService:
         if not os.path.exists(self.providers_config_file):
             with open(self.providers_config_file, 'w', encoding='utf-8') as f:
                 json.dump({"providers": [], "version": "1.0"}, f, ensure_ascii=False, indent=2)
+
+        # 创建默认游戏配置（从公共模板复制场景列表）
+        if not os.path.exists(self.game_config_file):
+            self._init_game_config()
+
+
+    def _init_game_config(self):
+        """从公共模板初始化用户游戏配置"""
+        # 读取公共 game-config.json 作为模板
+        public_config_path = os.path.join(
+            PROJECT_ROOT, "rpg-frontend", "public", "assets", "game-config.json"
+        )
+        if os.path.exists(public_config_path):
+            try:
+                with open(public_config_path, 'r', encoding='utf-8') as f:
+                    base_config = json.load(f)
+                # 用户配置只保存场景选择和描述
+                user_game_config = {
+                    "currentScene": base_config.get("currentScene", ""),
+                    "scenes": {}
+                }
+                # 复制所有场景的 key 和 description
+                for key, scene in base_config.get("scenes", {}).items():
+                    user_game_config["scenes"][key] = {
+                        "description": scene.get("description", "")
+                    }
+                with open(self.game_config_file, 'w', encoding='utf-8') as f:
+                    json.dump(user_game_config, f, ensure_ascii=False, indent=2)
+            except Exception as e:
+                print(f"⚠️ 初始化用户游戏配置失败: {e}")
+                # 创建最小默认配置
+                with open(self.game_config_file, 'w', encoding='utf-8') as f:
+                    json.dump({"currentScene": "", "scenes": {}}, f, ensure_ascii=False, indent=2)
+        else:
+            with open(self.game_config_file, 'w', encoding='utf-8') as f:
+                json.dump({"currentScene": "", "scenes": {}}, f, ensure_ascii=False, indent=2)
 
 
 # 缓存已创建的 UserDataService 实例
