@@ -14,7 +14,8 @@ class Work(Base):
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     title = Column(String(200), nullable=False)
     description = Column(Text, default="")
-    author = Column(String(100), default="匿名用户")
+    author = Column(String(100), default="匿名用户")  # 显示名称
+    author_id = Column(String(36), default="")  # 关联用户 ID
     tags = Column(String(500), default="")  # 逗号分隔的标签
     file_path = Column(String(500), nullable=False)  # 相对于 works/ 目录
     file_size = Column(Integer, default=0)

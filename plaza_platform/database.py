@@ -30,3 +30,21 @@ def get_db():
 def init_db():
     """初始化数据库表"""
     Base.metadata.create_all(bind=engine)
+    _migrate_add_author_id()
+
+
+def _migrate_add_author_id():
+    """迁移：为 works 表添加 author_id 列（兼容旧数据库）"""
+    import sqlite3
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        cursor = conn.execute("PRAGMA table_info(works)")
+        columns = [row[1] for row in cursor.fetchall()]
+        if "author_id" not in columns:
+            conn.execute("ALTER TABLE works ADD COLUMN author_id VARCHAR(36) DEFAULT ''")
+            conn.commit()
+            print("✅ 数据库迁移：works 表已添加 author_id 列")
+    except Exception as e:
+        print(f"⚠️ 数据库迁移检查: {e}")
+    finally:
+        conn.close()
