@@ -270,12 +270,18 @@ export const api = {
 
     const fetchStream = async () => {
       try {
+        const token = getToken()
+        const headers: Record<string, string> = {
+          'Content-Type': 'application/json',
+          'Accept': 'text/event-stream',
+        }
+        if (token) {
+          headers['Authorization'] = `Bearer ${token}`
+        }
+
         const response = await fetch('/api/chat/stream', {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Accept': 'text/event-stream',
-          },
+          headers,
           body: JSON.stringify({ message }),
           signal: controller.signal,
         })
