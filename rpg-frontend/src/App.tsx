@@ -75,19 +75,36 @@ const PlazaIcon = () => (
   </svg>
 )
 
-// 收起图标（向下箭头）
-const CollapseIcon = () => (
-  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <polyline points="6 9 12 15 18 9"/>
+// 最大化图标
+const MaximizeIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="3" y="3" width="18" height="18" rx="2" />
   </svg>
 )
 
-// 展开图标（向上箭头）
-const ExpandIcon = () => (
-  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <polyline points="18 15 12 9 6 15"/>
+// 还原图标（小窗）
+const RestoreIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="6" y="6" width="14" height="14" rx="2" />
+    <path d="M6 10h-2a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v2" />
   </svg>
 )
+
+// 最小化图标（横线）
+const MinimizeIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <line x1="5" y1="12" x2="19" y2="12" />
+  </svg>
+)
+
+// 展开聊天图标（气泡）
+const ChatBubbleIcon = () => (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+  </svg>
+)
+
+type ChatSize = 'normal' | 'expanded' | 'hidden'
 
 function App() {
   // ========== 认证状态 ==========
@@ -194,8 +211,8 @@ function App() {
     }
   }, [currentPage, gameConfig])
 
-  // 流式输出状态
-  const [isChatCollapsed, setIsChatCollapsed] = useState(false)
+  // 聊天窗口尺寸状态: normal(小窗) | expanded(全屏) | hidden(隐藏)
+  const [chatSize, setChatSize] = useState<ChatSize>('normal')
 
   // 获取 Agent 列表（登录后才获取）
   useEffect(() => {
@@ -490,24 +507,48 @@ function App() {
               <div id="game-container" className="game-container" />
             </div>
 
-            {/* 右下角浮动聊天窗口 */}
-            <div className={`chat-float-panel ${isChatCollapsed ? 'collapsed' : ''}`}>
+            {/* 隐藏状态下的悬浮按钮 */}
+            {chatSize === 'hidden' && (
+              <button
+                className="chat-restore-fab"
+                onClick={() => setChatSize('normal')}
+                title="打开聊天"
+              >
+                <ChatBubbleIcon />
+                {messages.length > 0 && (
+                  <span className="chat-fab-badge">{messages.length}</span>
+                )}
+              </button>
+            )}
+
+            {/* 聊天窗口 */}
+            {chatSize !== 'hidden' && (
+            <div className={`chat-float-panel ${chatSize}`}>
               <div className="chat-header">
                 <div className="chat-header-left">
                   <h3>💬 聊天记录</h3>
                   <span className="message-count">{messages.length} 条消息</span>
                 </div>
-                <button
-                  className="collapse-btn"
-                  onClick={() => setIsChatCollapsed(!isChatCollapsed)}
-                  title={isChatCollapsed ? '展开' : '收起'}
-                >
-                  {isChatCollapsed ? <ExpandIcon /> : <CollapseIcon />}
-                </button>
+                <div className="chat-window-controls">
+                  {/* 最小化（隐藏） */}
+                  <button
+                    className="window-ctrl-btn"
+                    onClick={() => setChatSize('hidden')}
+                    title="隐藏聊天"
+                  >
+                    <MinimizeIcon />
+                  </button>
+                  {/* 最大化 / 还原 */}
+                  <button
+                    className="window-ctrl-btn"
+                    onClick={() => setChatSize(chatSize === 'expanded' ? 'normal' : 'expanded')}
+                    title={chatSize === 'expanded' ? '还原小窗' : '最大化'}
+                  >
+                    {chatSize === 'expanded' ? <RestoreIcon /> : <MaximizeIcon />}
+                  </button>
+                </div>
               </div>
 
-              {!isChatCollapsed && (
-              <>
               <div className="messages-list">
                 {messages.length === 0 ? (
                   <div className="empty-chat">
@@ -570,9 +611,8 @@ function App() {
                   )}
                 </div>
               </div>
-              </>
-              )}
             </div>
+            )}
           </div>
         )}
 
