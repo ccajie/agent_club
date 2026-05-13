@@ -9,6 +9,7 @@ from .provider import Provider, ModelInfo, ProviderInfo
 from .dashscope_provider import DashScopeProvider
 from .anthropic_provider import AnthropicProvider
 from .kimicode_provider import KimiCodeProvider
+from .deepseek_provider import DeepSeekProvider
 from .provider_manager import ProviderManager, ProviderType, provider_manager
 
 
@@ -56,6 +57,8 @@ async def test_model_connection(
     # Determine base URL based on provider type
     if provider_type == "dashscope":
         base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+    elif provider_type == "deepseek":
+        base_url = "https://api.deepseek.com"
     elif provider_type in ["anthropic", "custom"] and not base_url:
         return False, "Base URL is required for this provider type"
 
@@ -86,6 +89,7 @@ __all__ = [
     "DashScopeProvider",
     "AnthropicProvider",
     "KimiCodeProvider",
+    "DeepSeekProvider",
     "ProviderManager",
     "ProviderType",
     "provider_manager",

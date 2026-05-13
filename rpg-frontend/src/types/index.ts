@@ -122,7 +122,7 @@ export interface ChatSceneCallbacks {
 
 // ========== 模型配置类型 ==========
 
-export type ProviderType = 'dashscope' | 'openai' | 'anthropic' | 'custom' | 'kimicode'
+export type ProviderType = 'dashscope' | 'openai' | 'anthropic' | 'custom' | 'kimicode' | 'deepseek'
 
 export interface LLMConfig {
   provider: ProviderType
@@ -206,7 +206,7 @@ export interface ProviderModel {
 export interface ProviderInfo {
   id: string
   name: string
-  provider_type: 'dashscope' | 'anthropic' | 'kimicode'
+  provider_type: 'dashscope' | 'anthropic' | 'kimicode' | 'deepseek'
   base_url: string
   api_key: string
   model_id: string

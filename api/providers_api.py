@@ -6,6 +6,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel, Field
 
 from providers import ProviderManager, ProviderType
+from providers import DeepSeekProvider
 from auth.dependencies import get_current_user
 from auth.user_managers import get_user_provider_manager
 
@@ -162,6 +163,14 @@ async def test_connection_temp(request: TestConnectionRequest, user: dict = Depe
                 model_id=request.model_id,
                 model_name="Test Model",
             )
+        elif request.provider_type == ProviderType.DEEPSEEK:
+            provider = DeepSeekProvider(
+                id="test",
+                name="Test Provider",
+                api_key=request.api_key,
+                model_id=request.model_id,
+                model_name="Test Model",
+            )
         else:
             raise HTTPException(status_code=400, detail=f"Unknown provider type: {request.provider_type}")
 
@@ -196,6 +205,17 @@ async def get_provider_types():
                 "description": "KimiCode 编程助手，基于 Anthropic 协议",
                 "required_fields": ["name", "api_key", "model_id", "model_name"],
                 "optional_fields": ["base_url"],
+            },
+            {
+                "id": "deepseek",
+                "name": "DeepSeek",
+                "description": "DeepSeek 深度求索 AI 大模型",
+                "required_fields": ["name", "api_key", "model_id", "model_name"],
+                "optional_fields": [],
+                "supported_models": [
+                    {"id": "deepseek-chat", "name": "DeepSeek Chat (V3)"},
+                    {"id": "deepseek-reasoner", "name": "DeepSeek Reasoner (R1)"},
+                ],
             },
         ]
     }
