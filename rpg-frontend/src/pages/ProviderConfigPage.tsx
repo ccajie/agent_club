@@ -26,6 +26,7 @@ const defaultProviderTypes: ProviderTypeInfo[] = [
   { id: 'openai', name: 'OpenAI', description: 'OpenAI 官方 API', required_fields: ['api_key', 'model_id'], optional_fields: ['base_url'] },
   { id: 'custom', name: '自定义 OpenAI 兼容', description: '任何 OpenAI 兼容的 API 服务', required_fields: ['api_key', 'base_url', 'model_id'] },
   { id: 'kimicode', name: 'KimiCode', description: 'KimiCode 编程助手', required_fields: ['api_key', 'model_id'], optional_fields: ['base_url'] },
+  { id: 'deepseek', name: 'DeepSeek', description: 'DeepSeek 深度求索 AI 大模型', required_fields: ['api_key', 'model_id'] },
 ]
 
 const defaultModels: Record<string, ProviderModel[]> = {
@@ -49,6 +50,10 @@ const defaultModels: Record<string, ProviderModel[]> = {
   ],
   kimicode: [
     { id: 'kimi-k2.5', name: 'Kimi K2.5', description: '最强推理能力' },
+  ],
+  deepseek: [
+    { id: 'deepseek-chat', name: 'DeepSeek V3', description: '通用对话模型' },
+    { id: 'deepseek-reasoner', name: 'DeepSeek R1', description: '推理/思考模型' },
   ],
 }
 
@@ -250,7 +255,8 @@ export const ProviderConfigPage = () => {
                     {provider.provider_type === 'dashscope' ? 'DashScope' :
                      provider.provider_type === 'anthropic' ? 'Anthropic' :
                      provider.provider_type === 'openai' ? 'OpenAI' :
-                     provider.provider_type === 'kimicode' ? 'KimiCode' : 'Custom'}
+                     provider.provider_type === 'kimicode' ? 'KimiCode' :
+                     provider.provider_type === 'deepseek' ? 'DeepSeek' : 'Custom'}
                   </span>
                   <span className="model-name">{provider.model_name || provider.model_id}</span>
                 </div>
@@ -368,6 +374,18 @@ export const ProviderConfigPage = () => {
                     style={{ opacity: 0.6, cursor: 'not-allowed' }}
                   />
                   <span className="hint">DashScope 使用默认 OpenAI 兼容模式地址</span>
+                </div>
+              )}
+              {formData.provider_type === 'deepseek' && (
+                <div className="form-group">
+                  <label>Base URL</label>
+                  <input
+                    type="text"
+                    value="https://api.deepseek.com"
+                    disabled
+                    style={{ opacity: 0.6, cursor: 'not-allowed' }}
+                  />
+                  <span className="hint">DeepSeek 使用默认 API 地址</span>
                 </div>
               )}
               {(formData.provider_type === 'anthropic' || formData.provider_type === 'custom') && (
