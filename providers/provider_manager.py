@@ -28,6 +28,8 @@ class ProviderType(str, Enum):
     DASHSCOPE = "dashscope"
     ANTHROPIC = "anthropic"
     KIMICODE = "kimicode"
+    OPENAI = "openai"
+    CUSTOM = "custom"
 
 
 class ProviderConfig(BaseModel):
@@ -144,6 +146,26 @@ class ProviderManager:
                     model_name=config.model_name,
                     is_active=config.is_active,
                 )
+            elif config.provider_type == ProviderType.OPENAI:
+                return AnthropicProvider(
+                    id=config.id,
+                    name=config.name,
+                    api_key=config.api_key,
+                    base_url=config.base_url or "https://api.openai.com/v1",
+                    model_id=config.model_id,
+                    model_name=config.model_name,
+                    is_active=config.is_active,
+                )
+            elif config.provider_type == ProviderType.CUSTOM:
+                return AnthropicProvider(
+                    id=config.id,
+                    name=config.name,
+                    api_key=config.api_key,
+                    base_url=config.base_url,
+                    model_id=config.model_id,
+                    model_name=config.model_name,
+                    is_active=config.is_active,
+                )
         except Exception as e:
             print(f"⚠️ Failed to create provider {config.id}: {e}")
         return None
@@ -234,6 +256,24 @@ class ProviderManager:
             )
         elif provider_type == ProviderType.KIMICODE:
             provider = KimiCodeProvider(
+                id=provider_id,
+                name=name,
+                api_key=provider_data.get("api_key", ""),
+                base_url=provider_data.get("base_url", ""),
+                model_id=model_id,
+                model_name=model_name,
+            )
+        elif provider_type == ProviderType.OPENAI:
+            provider = AnthropicProvider(
+                id=provider_id,
+                name=name,
+                api_key=provider_data.get("api_key", ""),
+                base_url=provider_data.get("base_url", "https://api.openai.com/v1"),
+                model_id=model_id,
+                model_name=model_name,
+            )
+        elif provider_type == ProviderType.CUSTOM:
+            provider = AnthropicProvider(
                 id=provider_id,
                 name=name,
                 api_key=provider_data.get("api_key", ""),

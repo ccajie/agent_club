@@ -162,6 +162,24 @@ async def test_connection_temp(request: TestConnectionRequest, user: dict = Depe
                 model_id=request.model_id,
                 model_name="Test Model",
             )
+        elif request.provider_type == ProviderType.OPENAI:
+            provider = AnthropicProvider(
+                id="test",
+                name="Test Provider",
+                api_key=request.api_key,
+                base_url=request.base_url or "https://api.openai.com/v1",
+                model_id=request.model_id,
+                model_name="Test Model",
+            )
+        elif request.provider_type == ProviderType.CUSTOM:
+            provider = AnthropicProvider(
+                id="test",
+                name="Test Provider",
+                api_key=request.api_key,
+                base_url=request.base_url,
+                model_id=request.model_id,
+                model_name="Test Model",
+            )
         else:
             raise HTTPException(status_code=400, detail=f"Unknown provider type: {request.provider_type}")
 
